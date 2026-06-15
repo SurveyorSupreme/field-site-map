@@ -35,13 +35,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   box-shadow:0 0 0 1px var(--accent) inset}
 .icon-btn svg{width:20px;height:20px}
 
-/* tap-feedback ripple (touch) */
-.tap-ripple{position:fixed;z-index:1500;pointer-events:none;border-radius:50%;
-  width:18px;height:18px;border:2px solid var(--accent);
-  transform:translate(-50%,-50%) scale(.5);opacity:.85;
-  animation:tapr .45s ease-out forwards}
-@keyframes tapr{to{transform:translate(-50%,-50%) scale(2.8);opacity:0}}
-
 /* ---------- map ---------- */
 #map{position:fixed;top:var(--toph);bottom:calc(var(--navh) + var(--safe));left:0;right:0;
   background:#090b0e;z-index:1}
@@ -82,7 +75,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .lsgap{width:8px}
 #lsBody{width:100%;touch-action:none}
 #lsBody svg{display:block;width:100%;height:auto;background:var(--bg2);
-  border:1px solid var(--line);border-radius:10px;cursor:grab}
+  border:1px solid var(--line);border-radius:10px;cursor:grab;touch-action:none}
 #lsBody svg:active{cursor:grabbing}
 #lsHint{color:var(--dim);font-size:11.5px;margin-top:11px;text-align:center}
 #lsTip{position:fixed;z-index:1450;pointer-events:none;display:none;white-space:nowrap;
@@ -421,17 +414,6 @@ if (typeof L === "undefined") {
   throw new Error("Leaflet failed to load");
 }
 document.documentElement.style.setProperty("--accent", THEME.accent);
-
-// tap-feedback ripple — shows a small ring wherever a finger touches (touch/pen only)
-window.addEventListener("pointerdown", e => {
-  if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-  const r = document.createElement("div");
-  r.className = "tap-ripple";
-  r.style.left = e.clientX + "px";
-  r.style.top = e.clientY + "px";
-  document.body.appendChild(r);
-  setTimeout(() => r.remove(), 470);
-}, { capture: true, passive: true });
 
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -1638,7 +1620,9 @@ function lsTwoPts(){
 }
 $("#lsBody").addEventListener("pointerdown", e => {
   if (!lsState) return;
-  try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+  // capture to #lsBody (stable) NOT e.target — lsRender() replaces the inner <svg> on every
+  // zoom frame, so capturing the soon-destroyed svg drops the gesture the instant you pinch
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
   lsPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   $("#lsTip").classList.remove("show");
   if (lsPointers.size === 1){
