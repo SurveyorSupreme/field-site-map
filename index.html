@@ -1,0 +1,2003 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0c0f12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Field Site Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --bg:#0c0f12; --bg2:#14181d; --bg3:#1c2127; --line:#262d35;
+  --txt:#e8eaed; --dim:#8c96a3; --accent:#4ade80; --accent-ink:#0b120d;
+  --toph:52px; --navh:60px; --safe:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+  font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  overscroll-behavior:none;touch-action:manipulation}
+
+/* ---------- top bar ---------- */
+#topbar{position:fixed;top:0;left:0;right:0;height:var(--toph);z-index:1100;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:0 10px 0 16px;background:rgba(12,15,18,.94);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line)}
+#projTitle{font-size:14px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--txt)}
+#topBtns{display:flex;gap:6px}
+.icon-btn{width:40px;height:40px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg2);color:var(--txt);display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex:0 0 auto}
+.icon-btn:active{background:var(--bg3)}
+.icon-btn.on{border-color:var(--accent);color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent) inset}
+.icon-btn svg{width:20px;height:20px}
+
+/* ---------- map ---------- */
+#map{position:fixed;top:var(--toph);bottom:calc(var(--navh) + var(--safe));left:0;right:0;
+  background:#090b0e;z-index:1}
+#map.crosshair{cursor:crosshair}
+.leaflet-container{background:#090b0e;font:inherit}
+.leaflet-control-attribution{background:rgba(12,15,18,.7)!important;color:#5d6673!important;
+  font-size:9px!important}
+.leaflet-control-attribution a{color:#5d6673!important}
+
+/* dark popups */
+.leaflet-popup-content-wrapper{background:var(--bg2);color:var(--txt);
+  border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.55)}
+.leaflet-popup-tip{background:var(--bg2);border:1px solid var(--line)}
+.leaflet-popup-content{margin:10px 14px;font:13px/1.45 inherit}
+.leaflet-popup-close-button{color:var(--dim)!important;padding:6px 8px 0 0!important}
+.pop b{display:block;font-size:14px;margin-bottom:2px}
+.pop span{display:block;color:var(--dim);font-size:12px;margin-top:2px}
+.pop .pop-rl{color:var(--accent);font-weight:600}
+.pop-photo{display:block;width:200px;max-width:58vw;border-radius:6px;margin-top:8px;
+  cursor:pointer;border:1px solid var(--line)}
+.pop-del{margin-top:9px;background:#43181c;color:#fda4af;border:1px solid #7f1d1d;
+  border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
+.pop-ls{margin-top:9px;background:var(--bg3);color:var(--accent);border:1px solid var(--accent);
+  border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+
+/* longsection viewer */
+#lsView{position:fixed;inset:0;z-index:1400;background:rgba(5,7,9,.95);display:none;
+  flex-direction:column;align-items:center;justify-content:center;padding:14px}
+#lsView.show{display:flex}
+#lsPanel{width:100%;max-width:980px;display:flex;flex-direction:column;align-items:center}
+#lsHead{color:var(--txt);font-size:16px;font-weight:800;margin-bottom:3px;text-align:center}
+#lsSub{color:var(--dim);font-size:12.5px;margin-bottom:10px;text-align:center}
+#lsCtrls{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-bottom:10px}
+#lsCtrls button{background:var(--bg3);border:1px solid var(--line);color:var(--dim);
+  border-radius:7px;padding:8px 13px;font:600 12px/1 inherit;cursor:pointer}
+#lsCtrls button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+#lsCtrls #lsClose{color:#fda4af;border-color:#7f1d1d}
+.lsgap{width:8px}
+#lsBody{width:100%;touch-action:none}
+#lsBody svg{display:block;width:100%;height:auto;background:var(--bg2);
+  border:1px solid var(--line);border-radius:10px;cursor:grab}
+#lsBody svg:active{cursor:grabbing}
+#lsHint{color:var(--dim);font-size:11.5px;margin-top:11px;text-align:center}
+#lsTip{position:fixed;z-index:1450;pointer-events:none;display:none;white-space:nowrap;
+  background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;
+  font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--txt);box-shadow:0 4px 14px rgba(0,0,0,.55)}
+#lsTip.show{display:block}
+#lsTip .sub{color:var(--dim);font-weight:400}
+
+/* measure tooltip */
+.meas-tip{background:var(--bg2);color:var(--accent);border:1px solid var(--accent);
+  border-radius:5px;font-weight:700;font-size:13px;padding:2px 8px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.leaflet-tooltip-top.meas-tip::before{border-top-color:var(--accent)}
+.loc-tip{background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:5px;
+  font-size:12px;padding:2px 7px}
+
+/* GPS pulsing dot */
+.loc-dot{width:16px;height:16px;border-radius:50%;background:#3b82f6;
+  border:2.5px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.6);position:relative}
+.loc-dot::after{content:"";position:absolute;inset:-9px;border-radius:50%;
+  border:2px solid #3b82f6;animation:locpulse 1.8s ease-out infinite}
+@keyframes locpulse{0%{transform:scale(.45);opacity:.95}100%{transform:scale(1.9);opacity:0}}
+
+/* GPS accuracy chip */
+#gpsChip{position:fixed;left:10px;bottom:calc(var(--navh) + var(--safe) + 12px);z-index:1040;
+  background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:7px 11px;
+  font:700 12.5px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--dim);box-shadow:0 3px 12px rgba(0,0,0,.45);font-variant-numeric:tabular-nums}
+#gpsChip.ok{color:#4ade80;border-color:#2c5e40}
+#gpsChip.mid{color:#fbbf24;border-color:#6b5314}
+#gpsChip.bad{color:#f87171;border-color:#7f1d1d}
+
+/* scale bar */
+.leaflet-control-scale-line{background:rgba(12,15,18,.65)!important;color:#aeb6c2!important;
+  border:2px solid #aeb6c2!important;border-top:none!important;font-size:10px!important}
+
+/* pin marker */
+.pin-marker svg{filter:drop-shadow(0 2px 3px rgba(0,0,0,.6))}
+.pin-marker.temp{animation:pinbob .9s ease-in-out infinite alternate}
+@keyframes pinbob{from{transform:translateY(0)}to{transform:translateY(-5px)}}
+
+/* ---------- bottom nav ---------- */
+#nav{position:fixed;bottom:0;left:0;right:0;z-index:1100;display:flex;
+  height:calc(var(--navh) + var(--safe));padding-bottom:var(--safe);
+  background:var(--bg2);border-top:1px solid var(--line)}
+#nav button{flex:1;background:none;border:0;color:var(--dim);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font:11px/1 inherit;letter-spacing:.3px}
+#nav button svg{width:22px;height:22px}
+#nav button.on{color:var(--accent)}
+
+/* ---------- slide-up panels ---------- */
+.panel{position:fixed;left:0;right:0;bottom:calc(var(--navh) + var(--safe));z-index:1050;
+  background:var(--bg2);border-top:1px solid var(--line);border-radius:12px 12px 0 0;
+  max-height:46vh;display:flex;flex-direction:column;
+  transform:translateY(115%);visibility:hidden;
+  transition:transform .26s cubic-bezier(.3,.8,.3,1),visibility 0s .26s;
+  box-shadow:0 -10px 30px rgba(0,0,0,.45)}
+.panel.open{transform:none;visibility:visible;
+  transition:transform .26s cubic-bezier(.3,.8,.3,1)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px 8px}
+.panel-head h3{margin:0;font-size:13px;font-weight:800;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--txt)}
+.pclose{background:none;border:0;color:var(--dim);font-size:17px;cursor:pointer;
+  padding:2px 6px}
+.panel-body{overflow-y:auto;padding:0 12px 12px;-webkit-overflow-scrolling:touch}
+.panel-foot{padding:10px 12px 12px;border-top:1px solid var(--line)}
+.empty{color:var(--dim);font-size:13px;padding:14px 6px;text-align:center}
+.hint{color:var(--dim);font-size:13px;padding:4px 16px 12px}
+
+.btn{background:var(--bg3);border:1px solid var(--line);color:var(--txt);
+  border-radius:8px;padding:10px 16px;font:600 14px/1.2 inherit;cursor:pointer;width:100%}
+.btn:active{background:var(--line)}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.warn{color:#fda4af;border-color:#7f1d1d}
+.btn-row{display:flex;gap:10px;padding:0 16px 16px}
+.btn svg{width:17px;height:17px;vertical-align:-3px;margin-right:6px}
+
+/* basemap segmented control */
+.seg{display:flex;gap:6px;padding:2px 16px 12px}
+.seg button{flex:1;background:var(--bg3);border:1px solid var(--line);color:var(--dim);
+  border-radius:7px;padding:9px 0;font:600 13px/1 inherit;cursor:pointer}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+
+/* layer rows */
+.lyr{display:flex;align-items:center;gap:11px;padding:11px 6px;
+  border-bottom:1px solid var(--line);cursor:pointer}
+.lyr:last-child{border-bottom:0}
+.lyr-dot{width:13px;height:13px;border-radius:3px;flex:0 0 auto;
+  box-shadow:0 0 6px rgba(0,0,0,.4)}
+.lyr-name{flex:1;min-width:0;font-weight:600;font-size:14px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.lyr-name small{display:block;color:var(--dim);font-weight:400;font-size:11.5px;margin-top:1px}
+.lyr-eye{color:var(--accent);flex:0 0 auto;display:flex}
+.lyr-eye svg{width:20px;height:20px}
+.lyr.off .lyr-dot{opacity:.25}
+.lyr.off .lyr-name{color:var(--dim)}
+.lyr.off .lyr-eye{color:#454f63}
+.lyr-del{background:none;border:0;color:#5d6673;cursor:pointer;padding:6px;flex:0 0 auto;
+  font-size:15px;line-height:1}
+
+/* measure panel */
+.meas-big{text-align:center;padding:6px 16px 14px}
+#measTotal{display:block;font-size:34px;font-weight:800;color:var(--accent);
+  font-variant-numeric:tabular-nums}
+.meas-sub{display:block;color:var(--dim);font-size:12.5px;margin-top:3px}
+.sec-save{display:flex;gap:10px;padding:0 16px 12px}
+.sec-save input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  color:var(--txt);padding:10px 12px;font:14px/1.3 inherit;outline:none;min-width:0}
+.sec-save input:focus{border-color:var(--accent)}
+.sec-save .btn{width:auto;padding:10px 20px}
+.sec-tip{background:rgba(12,15,18,.78);color:var(--accent);border:1px solid var(--line);
+  border-radius:5px;font-weight:700;font-size:11.5px;padding:2px 7px;box-shadow:none}
+.pop-here{color:var(--accent)!important;font-weight:600}
+
+/* pin panel */
+#pinForm{padding:0 16px 4px}
+#pinThumb{display:block;width:84px;height:84px;object-fit:cover;border-radius:8px;
+  border:1px solid var(--line);margin-bottom:10px}
+#pinNote{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  color:var(--txt);padding:12px;font:15px/1.3 inherit;margin-bottom:12px;outline:none}
+#pinNote:focus{border-color:var(--accent)}
+#pinForm .btn-row{padding:0 0 16px}
+
+/* notes list */
+.note-item{display:flex;align-items:center;gap:10px;padding:10px 6px;
+  border-bottom:1px solid var(--line);cursor:pointer}
+.note-item:last-child{border-bottom:0}
+.note-ico{color:var(--accent);flex:0 0 auto;display:flex}
+.note-ico svg{width:19px;height:19px}
+.note-thumb{width:42px;height:42px;object-fit:cover;border-radius:6px;flex:0 0 auto;
+  border:1px solid var(--line)}
+.note-txt{flex:1;min-width:0}
+.note-txt b{display:block;font-size:14px;font-weight:600;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.note-txt small{color:var(--dim);font-size:11.5px}
+.note-del{background:none;border:0;color:#5d6673;cursor:pointer;padding:8px;font-size:15px}
+
+/* photo viewer */
+#photoViewer{position:fixed;inset:0;z-index:1400;background:rgba(5,7,9,.94);
+  display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+  padding:20px}
+#photoViewer.show{display:flex}
+#photoViewer img{max-width:96%;max-height:82vh;border-radius:8px;
+  box-shadow:0 12px 50px rgba(0,0,0,.7)}
+#photoViewer .cap{color:var(--txt);font-size:14px;font-weight:600;text-align:center}
+#photoViewer .sub{color:var(--dim);font-size:12px}
+
+/* toast */
+#toast{position:fixed;top:calc(var(--toph) + 12px);left:50%;transform:translate(-50%,-8px);
+  z-index:1200;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
+  border-left:3px solid var(--accent);border-radius:8px;padding:9px 15px;font-size:13.5px;
+  max-width:86vw;opacity:0;pointer-events:none;transition:.25s;
+  box-shadow:0 6px 20px rgba(0,0,0,.5)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* drag-drop overlay */
+#dropOverlay{position:fixed;inset:0;z-index:1300;background:rgba(12,15,18,.85);
+  display:none;align-items:center;justify-content:center}
+#dropOverlay.show{display:flex}
+#dropOverlay>div{border:2.5px dashed var(--accent);border-radius:14px;color:var(--accent);
+  font-size:18px;font-weight:700;padding:46px 60px}
+
+#fatal{position:fixed;inset:0;z-index:2000;background:var(--bg);display:none;
+  align-items:center;justify-content:center;text-align:center;padding:30px;color:var(--dim)}
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div id="projTitle">Field Site Map</div>
+  <div id="topBtns">
+    <button class="icon-btn" id="btnImport" aria-label="Import KML or DXF">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10m0 0 4-4m-4 4-4-4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+    </button>
+    <button class="icon-btn" id="btnBase" aria-label="Switch basemap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.6 4 5.7 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.7-4-9s1.3-6.4 4-9z"/></svg>
+    </button>
+    <button class="icon-btn" id="btnLocate" aria-label="My location">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </button>
+  </div>
+</header>
+
+<div id="map"></div>
+<div id="toast"></div>
+<div id="gpsChip" hidden>GPS —</div>
+<div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
+<div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
+<div id="lsView">
+  <div id="lsPanel">
+    <div id="lsHead"></div>
+    <div id="lsSub"></div>
+    <div id="lsCtrls">
+      <button data-t="rl">RL labels</button>
+      <button data-t="grade">Grades</button>
+      <button data-t="pts">Points</button>
+      <button data-t="cross">Crossings</button>
+      <span class="lsgap"></span>
+      <button id="lsFit">Fit data</button>
+      <button id="lsAll">Fit all</button>
+      <button id="lsClose">Close</button>
+    </div>
+    <div id="lsBody"></div>
+    <div id="lsHint">hover / tap a point for chainage + RL · scroll / pinch to zoom · drag to pan</div>
+  </div>
+</div>
+<div id="lsTip"></div>
+<div id="fatal"><div><b style="color:#e8eaed">Map library failed to load.</b><br><br>This file needs internet access the first time it loads Leaflet from the CDN. Check your connection and reload.</div></div>
+
+<!-- ============ Layers panel ============ -->
+<section class="panel" id="panel-layers">
+  <div class="panel-head"><h3>Layers</h3><button class="pclose" data-close>&#10005;</button></div>
+  <div class="seg" id="baseSeg">
+    <button data-base="0" class="on">Aerial</button>
+    <button data-base="1">Street</button>
+    <button data-base="2">Topo</button>
+  </div>
+  <div class="panel-body" id="layerList">
+    <div class="empty">No layers yet — import a KML or DXF, or drag one onto the map.</div>
+  </div>
+  <div class="panel-foot">
+    <button class="btn" id="btnImport2">+ Import KML / DXF</button>
+    <div class="btn-row" style="padding:10px 0 0">
+      <button class="btn" id="btnSaveJob">Save job file</button>
+      <button class="btn" id="btnLoadJob">Load job file</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Measure panel ============ -->
+<section class="panel" id="panel-measure">
+  <div class="panel-head"><h3>Measure</h3><button class="pclose" data-close>&#10005;</button></div>
+  <div class="meas-big">
+    <span id="measTotal">0 m</span>
+    <span class="meas-sub" id="measPts">tap the map to start</span>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="measUndo">Undo</button>
+    <button class="btn warn" id="measClear">Clear</button>
+  </div>
+  <div class="sec-save">
+    <input id="secName" type="text" placeholder="Section name — e.g. SS run MH3–MH4" maxlength="60" autocomplete="off">
+    <button class="btn accent" id="secSaveBtn">Save</button>
+  </div>
+  <div class="panel-body" id="secList"></div>
+</section>
+
+<!-- ============ Pin panel ============ -->
+<section class="panel" id="panel-pin">
+  <div class="panel-head"><h3>Drop pin</h3><button class="pclose" data-close>&#10005;</button></div>
+  <div class="hint" id="pinHint">Tap the map to place a pin, or:</div>
+  <div class="btn-row" id="pinActions">
+    <button class="btn" id="btnPhotoPin">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/></svg>Photo pin</button>
+    <button class="btn" id="btnPinHere">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21"/></svg>My location</button>
+  </div>
+  <div id="pinForm" hidden>
+    <img id="pinThumb" hidden alt="">
+    <input id="pinNote" type="text" placeholder="Note — e.g. MH lid 40 low" maxlength="120" autocomplete="off" enterkeyhint="done">
+    <div class="btn-row">
+      <button class="btn accent" id="pinSave">Save pin</button>
+      <button class="btn" id="pinCancel">Cancel</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Notes panel ============ -->
+<section class="panel" id="panel-notes">
+  <div class="panel-head"><h3>Notes</h3><button class="pclose" data-close>&#10005;</button></div>
+  <div class="panel-body" id="noteList"><div class="empty">No pins yet.</div></div>
+  <div class="panel-foot"><button class="btn" id="btnExport">Export all — CSV + KML + photos (zip)</button></div>
+</section>
+
+<!-- ============ bottom nav ============ -->
+<nav id="nav">
+  <button data-panel="layers">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m12 3 9.5 5.5L12 14 2.5 8.5 12 3z"/><path d="m4.8 12.3-2.3 1.4L12 19.2l9.5-5.5-2.3-1.4"/></svg>
+    <span>Layers</span>
+  </button>
+  <button data-panel="measure">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3.5 16.5 16.5 3.5l4 4L7.5 20.5z"/><path d="m7 13 1.7 1.7M10 10l1.7 1.7M13 7l1.7 1.7"/></svg>
+    <span>Measure</span>
+  </button>
+  <button data-panel="pin">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 21s-7-6.6-7-11.5a7 7 0 0 1 14 0C19 14.4 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.4"/></svg>
+    <span>Pin</span>
+  </button>
+  <button data-panel="notes">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".8" fill="currentColor"/><circle cx="4" cy="12" r=".8" fill="currentColor"/><circle cx="4" cy="18" r=".8" fill="currentColor"/></svg>
+    <span>Notes</span>
+  </button>
+</nav>
+
+<input type="file" id="fileInput" accept=".kml,.dxf,.json" multiple hidden>
+<!-- no capture attr: the chooser lets crew pick camera OR gallery — gallery photos
+     carry the camera app's EXIF GPS, which works even when browser GPS is blocked -->
+<input type="file" id="photoInput" accept="image/*" hidden>
+<input type="file" id="jobInput" accept=".json,application/json" hidden>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* =====================================================================
+   ███  PRELOADED_DATA — ENGINEER: EDIT THIS BLOCK BEFORE ISSUING  ███
+
+   1. Set projectTitle (shows in the top bar).
+   2. Optionally set the start view (lat / lon / zoom).
+   3. Paste KML file contents into the kml array. Each entry:
+        { name: "Layer source name", kml: `...whole KML file text...` }
+      Use backtick ` quotes around the KML so quotes inside it survive.
+      Folder names inside the KML become layer names in the app.
+   4. THEME.accent re-skins the whole UI from one value if you want a
+      different look per project (e.g. "#38bdf8" blue, "#facc15" yellow).
+   5. Save the file and send it to the crew. Nothing else to change.
+===================================================================== */
+const PRELOADED_DATA = {
+  projectTitle: "Field Site Map",
+  view: { lat: -43.5320, lon: 172.6362, zoom: 13 },
+  kml: [
+    // Example:
+    // { name: "Stage 2 as-builts", kml: `<?xml version="1.0" encoding="UTF-8"?>
+    // <kml xmlns="http://www.opengis.net/kml/2.2"> ... </kml>` },
+  ],
+};
+const THEME = { accent: "#4ade80" };
+// What the RL/Z values in your strings represent — printed against longsection crossing
+// differences so the number is never ambiguous. Change to "invert to invert",
+// "centreline to centreline", or "level to level — verify" if a job's data differs.
+const CROSSING_DATUM = "top of pipe to top of pipe";
+/* ============================ end of editable block ================= */
+
+if (typeof L === "undefined") {
+  document.getElementById("fatal").style.display = "flex";
+  throw new Error("Leaflet failed to load");
+}
+document.documentElement.style.setProperty("--accent", THEME.accent);
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let toastTimer;
+function toast(msg, ms = 2600){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
+}
+function fmtDist(m){
+  return (m < 100 ? m.toFixed(1) : Math.round(m).toLocaleString("en-NZ")) + " m";
+}
+function zRangeText(zs){
+  const v = (zs || []).filter(Number.isFinite);
+  if (!v.length || v.every(z => z === 0)) return "RL —";
+  const lo = Math.min(...v), hi = Math.max(...v);
+  return hi - lo < 0.005 ? `RL ${lo.toFixed(2)}` : `RL ${lo.toFixed(2)} – ${hi.toFixed(2)}`;
+}
+
+/* ---------- map + basemaps ---------- */
+const map = L.map("map", { zoomControl: false, preferCanvas: true });
+map.attributionControl.setPrefix(false);
+map.setView([PRELOADED_DATA.view.lat, PRELOADED_DATA.view.lon], PRELOADED_DATA.view.zoom);
+
+// place/road name overlay on top of the imagery so crews can orient themselves
+const esriImagery = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 21, maxNativeZoom: 19, attribution: "Esri World Imagery" });
+const esriLabels = L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+  { maxZoom: 21, maxNativeZoom: 19 });
+const BASEMAPS = [
+  { name: "Aerial", layer: L.layerGroup([esriImagery, esriLabels]) },
+  { name: "Street", layer: L.tileLayer(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      { maxZoom: 21, maxNativeZoom: 19, attribution: "© OpenStreetMap" }) },
+  { name: "Topo", layer: L.tileLayer(
+      "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+      { maxZoom: 21, maxNativeZoom: 17, attribution: "© OpenTopoMap" }) },
+];
+let baseIdx = 0;
+BASEMAPS[0].layer.addTo(map);
+L.control.scale({ imperial: false, maxWidth: 120 }).addTo(map);
+function setBasemap(i){
+  if (i === baseIdx) return;
+  map.removeLayer(BASEMAPS[baseIdx].layer);
+  baseIdx = i;
+  BASEMAPS[i].layer.addTo(map);
+  document.querySelectorAll("#baseSeg button").forEach(b =>
+    b.classList.toggle("on", +b.dataset.base === i));
+  toast("Basemap: " + BASEMAPS[i].name);
+}
+$("#btnBase").addEventListener("click", () => setBasemap((baseIdx + 1) % BASEMAPS.length));
+document.querySelectorAll("#baseSeg button").forEach(b =>
+  b.addEventListener("click", () => setBasemap(+b.dataset.base)));
+
+/* ---------- service colours ---------- */
+const SERVICE_COLOURS = [
+  [/storm|^sw[\s_\-]|[\s_\-]sw[\s_\-]|culvert|soak/i, "#22d3ee"],   // stormwater — cyan
+  [/sewer|waste|foul|^ss[\s_\-]|\bss\b|^ww[\s_\-]|\bww\b/i, "#fbbf24"], // sewer — amber
+  [/water|^wm[\s_\-]|\bwm\b|hydrant|rider/i, "#3b82f6"],            // water — blue
+  [/gas/i, "#f97316"],                                              // gas — orange
+  [/elec|power|cable|\bhv\b|\blv\b|light/i, "#ef4444"],             // electrical — red
+  [/tel|comm|fibre|fiber|chorus|enable|duct/i, "#a855f7"],          // telecom — purple
+];
+const FALLBACK_COLOURS = ["#f472b6", "#34d399", "#a3e635", "#60a5fa", "#facc15"];
+let fallbackIdx = 0;
+function colourFor(name){
+  for (const [re, col] of SERVICE_COLOURS) if (re.test(name)) return col;
+  return FALLBACK_COLOURS[fallbackIdx++ % FALLBACK_COLOURS.length];
+}
+
+/* ---------- layer registry ---------- */
+const state = { layers: [], pins: [], sections: [], tool: null };
+let featSeq = 0;
+const featRegistry = new Map(); // fid → { f, layerName, color } for longsection lookup
+/* taps on features/sections get swallowed by the canvas renderer — hand them to the active tool */
+function toolForward(e){
+  if (state.tool === "measure") measureAdd(e.latlng);
+  else if (state.tool === "pin") pinAt(e.latlng);
+}
+let layerSeq = 0;
+
+function addLayer(name, feats, source, opts = {}){
+  const color = opts.color || colourFor(name);
+  const group = L.layerGroup();
+  const bounds = L.latLngBounds([]);
+  feats.forEach(f => {
+    let obj;
+    if (f.kind === "point")
+      obj = L.circleMarker(f.latlngs[0], { radius: 6, color: "#0c0f12", weight: 1.5,
+        fillColor: color, fillOpacity: 1 });
+    else if (f.kind === "poly")
+      obj = L.polygon(f.latlngs, { color, weight: 2, fillColor: color, fillOpacity: 0.15 });
+    else
+      obj = L.polyline(f.latlngs, { color, weight: 3, opacity: 0.92 });
+    // longsection available when a line carries an RL on every vertex
+    const zsOK = f.kind === "line" && Array.isArray(f.zs) &&
+      f.zs.length === f.latlngs.length && f.zs.every(Number.isFinite) &&
+      f.zs.some(z => z !== 0);
+    let lsBtn = "";
+    if (zsOK){
+      const fid = ++featSeq;
+      featRegistry.set(fid, { f, layerName: name, color });
+      lsBtn = `<button class="pop-ls" data-fid="${fid}">Longsection</button>`;
+    }
+    obj.bindPopup(`<div class="pop"><b>${esc(f.name)}</b>` +
+      `<span>${esc(name)}</span><span class="pop-rl">${zRangeText(f.zs)}</span>${lsBtn}</div>`);
+    obj.on("click", toolForward);
+    group.addLayer(obj);
+    f.latlngs.forEach(ll => bounds.extend(ll));
+  });
+  const visible = opts.visible !== false;
+  if (visible) group.addTo(map);
+  state.layers.push({ id: ++layerSeq, name, source, color, group, feats, visible,
+    origin: opts.origin || "import", count: feats.length });
+  renderLayerList();
+  persistLayers();
+  return bounds;
+}
+
+function renderLayerList(){
+  const box = $("#layerList");
+  if (!state.layers.length){
+    box.innerHTML = '<div class="empty">No layers yet — import a KML or DXF, or drag one onto the map.</div>';
+    return;
+  }
+  box.innerHTML = "";
+  const EYE_ON  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4l16 16M9.9 5.9A10.8 10.8 0 0 1 12 5.5c6.5 0 10 6.5 10 6.5a17.5 17.5 0 0 1-3.2 3.9M6.1 8.3A17 17 0 0 0 2 12s3.5 6.5 10 6.5c1.4 0 2.7-.3 3.8-.8"/></svg>';
+  state.layers.forEach(l => {
+    const row = document.createElement("div");
+    row.className = "lyr" + (l.visible ? "" : " off");
+    row.innerHTML =
+      `<span class="lyr-dot" style="background:${l.color}"></span>` +
+      `<span class="lyr-name">${esc(l.name)}<small>${l.count} feature${l.count !== 1 ? "s" : ""} · ${esc(l.source)}</small></span>` +
+      `<span class="lyr-eye">${l.visible ? EYE_ON : EYE_OFF}</span>` +
+      `<button class="lyr-del" aria-label="Remove layer">&#10005;</button>`;
+    row.addEventListener("click", e => {
+      if (e.target.closest(".lyr-del")){
+        map.removeLayer(l.group);
+        state.layers = state.layers.filter(x => x !== l);
+        renderLayerList();
+        persistLayers();
+        toast("Removed layer: " + l.name);
+        return;
+      }
+      l.visible = !l.visible;
+      l.visible ? l.group.addTo(map) : map.removeLayer(l.group);
+      renderLayerList();
+      persistLayers();
+    });
+    box.appendChild(row);
+  });
+}
+
+/* ---------- KML import ---------- */
+function importKML(text, srcName, origin = "import"){
+  const doc = new DOMParser().parseFromString(text, "text/xml");
+  if (doc.getElementsByTagName("parsererror").length){ toast("Could not parse " + srcName); return; }
+  const childText = (el, tag) => {
+    for (const c of el.children) if (c.localName === tag) return c.textContent.trim();
+    return null;
+  };
+  const descend = (el, tag) => {
+    if (el.localName === tag) return el;
+    for (const c of el.children){ const r = descend(c, tag); if (r) return r; }
+    return null;
+  };
+  const docEl = descend(doc.documentElement, "Document");
+  const docName = (docEl && childText(docEl, "name")) || srcName;
+  const groups = new Map();
+
+  function coordsOf(g){
+    let el = null;
+    (function rec(e){ for (const c of e.children){ if (el) return;
+      if (c.localName === "coordinates") el = c; else rec(c); } })(g);
+    if (!el) return [];
+    return el.textContent.trim().split(/\s+/)
+      .map(s => s.split(",").map(Number))
+      .filter(c => c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]));
+  }
+  function placemark(pm, folder){
+    const pname = childText(pm, "name") || "Feature";
+    const geoms = [];
+    (function rec(e){ for (const c of e.children){
+      if (/^(Point|LineString|Polygon)$/.test(c.localName)) geoms.push(c);
+      else if (c.localName === "MultiGeometry") rec(c);
+    } })(pm);
+    geoms.forEach(g => {
+      const coords = coordsOf(g);
+      if (!coords.length) return;
+      const kind = g.localName === "Point" ? "point" :
+                   g.localName === "Polygon" ? "poly" : "line";
+      const key = folder || docName;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push({
+        name: pname, kind,
+        latlngs: coords.map(c => [c[1], c[0]]),
+        zs: coords.map(c => Number.isFinite(c[2]) ? c[2] : NaN), // aligned to vertices for longsections
+
+      });
+    });
+  }
+  (function walk(el, folder){
+    for (const c of el.children){
+      if (c.localName === "Placemark") placemark(c, folder);
+      else if (c.localName === "Folder") walk(c, childText(c, "name") || folder);
+      else walk(c, folder);
+    }
+  })(doc.documentElement, null);
+
+  if (!groups.size){ toast("No features found in " + srcName); return; }
+  let bounds = null;
+  groups.forEach((feats, name) => {
+    const b = addLayer(name, feats, srcName, { origin });
+    bounds = bounds ? bounds.extend(b) : b;
+  });
+  if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+  const n = [...groups.values()].reduce((a, v) => a + v.length, 0);
+  toast(`${srcName}: ${n} features in ${groups.size} layer${groups.size > 1 ? "s" : ""}`);
+}
+
+/* ---------- NZ projections → WGS84 (inverse Transverse Mercator, GRS80) ----------
+   NZTM2000 plus the NZGD2000 meridional circuits in use on local jobs.
+   Add more circuits by copying a row and entering its LINZ origin values. */
+const GRS80 = { a: 6378137, f: 1 / 298.257222101 };
+const PROJECTIONS = [
+  { name: "NZTM2000", lat0: 0, lon0: 173, k0: 0.9996, FE: 1600000, FN: 10000000,
+    xr: [800000, 3000000], yr: [4000000, 7000000] },
+  { name: "Mount Pleasant 2000", lat0: -43.5905555555556, lon0: 172.726944444444,
+    k0: 1, FE: 400000, FN: 800000,
+    xr: [250000, 550000], yr: [650000, 950000] },
+];
+function meridianArc(phi){ // radians → metres along meridian from equator
+  const { a, f } = GRS80;
+  const e2 = f * (2 - f), e4 = e2 * e2, e6 = e4 * e2;
+  return a * ((1 - e2 / 4 - 3 * e4 / 64 - 5 * e6 / 256) * phi
+    - (3 * e2 / 8 + 3 * e4 / 32 + 45 * e6 / 1024) * Math.sin(2 * phi)
+    + (15 * e4 / 256 + 45 * e6 / 1024) * Math.sin(4 * phi)
+    - (35 * e6 / 3072) * Math.sin(6 * phi));
+}
+function tmInverse(E, N, p){
+  const { a, f } = GRS80;
+  const e2 = f * (2 - f), ep2 = e2 / (1 - e2);
+  const lon0 = p.lon0 * Math.PI / 180;
+  const M = meridianArc(p.lat0 * Math.PI / 180) + (N - p.FN) / p.k0;
+  const mu = M / (a * (1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 * e2 * e2 / 256));
+  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+  const phi1 = mu
+    + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu)
+    + (21 * e1 * e1 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu)
+    + (151 * e1 ** 3 / 96) * Math.sin(6 * mu)
+    + (1097 * e1 ** 4 / 512) * Math.sin(8 * mu);
+  const sp = Math.sin(phi1), cp = Math.cos(phi1), tp = Math.tan(phi1);
+  const C1 = ep2 * cp * cp, T1 = tp * tp;
+  const N1 = a / Math.sqrt(1 - e2 * sp * sp);
+  const R1 = a * (1 - e2) / Math.pow(1 - e2 * sp * sp, 1.5);
+  const D = (E - p.FE) / (N1 * p.k0);
+  const lat = phi1 - (N1 * tp / R1) * (D * D / 2
+    - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ep2) * D ** 4 / 24
+    + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ep2 - 3 * C1 * C1) * D ** 6 / 720);
+  const lon = lon0 + (D - (1 + 2 * T1 + C1) * D ** 3 / 6
+    + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * D ** 5 / 120) / cp;
+  return [lat * 180 / Math.PI, lon * 180 / Math.PI];
+}
+function tmForward(lat, lon, p){ // WGS84/NZGD2000 lat,lon → projection E,N
+  const { a, f } = GRS80;
+  const e2 = f * (2 - f), ep2 = e2 / (1 - e2);
+  const phi = lat * Math.PI / 180, lam = lon * Math.PI / 180;
+  const lam0 = p.lon0 * Math.PI / 180;
+  const sp = Math.sin(phi), cp = Math.cos(phi), tp = Math.tan(phi);
+  const Nn = a / Math.sqrt(1 - e2 * sp * sp);
+  const T = tp * tp, C = ep2 * cp * cp;
+  const A = (lam - lam0) * cp;
+  const M = meridianArc(phi), M0 = meridianArc(p.lat0 * Math.PI / 180);
+  const E = p.FE + p.k0 * Nn * (A + (1 - T + C) * A ** 3 / 6
+    + (5 - 18 * T + T * T + 72 * C - 58 * ep2) * A ** 5 / 120);
+  const N = p.FN + p.k0 * (M - M0 + Nn * tp * (A * A / 2
+    + (5 - T + 9 * C + 4 * C * C) * A ** 4 / 24
+    + (61 - 58 * T + T * T + 600 * C - 330 * ep2) * A ** 6 / 720));
+  return [E, N];
+}
+function detectProjection(pts){
+  if (!pts.length) return null;
+  for (const p of PROJECTIONS){
+    let n = 0;
+    for (const [x, y] of pts)
+      if (x >= p.xr[0] && x <= p.xr[1] && y >= p.yr[0] && y <= p.yr[1]) n++;
+    if (n / pts.length > 0.8) return p;
+  }
+  return null;
+}
+
+/* ---------- DXF import (LINE + LWPOLYLINE) ---------- */
+function parseDXFEntities(text){
+  const rows = text.split(/\r\n|\n|\r/);
+  const ents = [];
+  let section = "", expectName = false, cur = null;
+  for (let i = 0; i + 1 < rows.length; i += 2){
+    const code = parseInt(rows[i], 10), val = rows[i + 1].trim();
+    if (Number.isNaN(code)) continue;
+    if (code === 0){
+      if (cur){ ents.push(cur); cur = null; }
+      if (val === "SECTION") expectName = true;
+      else if (val === "ENDSEC") section = "";
+      else if (section === "ENTITIES"){
+        if (val === "LINE") cur = { t: "LINE", layer: "0", a: [0, 0, 0], b: [0, 0, 0] };
+        else if (val === "LWPOLYLINE") cur = { t: "LWP", layer: "0", verts: [], elev: 0, closed: false };
+      }
+      continue;
+    }
+    if (expectName && code === 2){ section = val; expectName = false; continue; }
+    if (!cur) continue;
+    const n = parseFloat(val);
+    if (cur.t === "LINE"){
+      if (code === 8) cur.layer = val;
+      else if (code === 10) cur.a[0] = n; else if (code === 20) cur.a[1] = n;
+      else if (code === 30) cur.a[2] = n;
+      else if (code === 11) cur.b[0] = n; else if (code === 21) cur.b[1] = n;
+      else if (code === 31) cur.b[2] = n;
+    } else {
+      if (code === 8) cur.layer = val;
+      else if (code === 38) cur.elev = n;
+      else if (code === 70) cur.closed = !!(n & 1);
+      else if (code === 10) cur.verts.push([n, 0]);
+      else if (code === 20 && cur.verts.length) cur.verts[cur.verts.length - 1][1] = n;
+    }
+  }
+  if (cur) ents.push(cur);
+  return ents.map(e => {
+    if (e.t === "LINE")
+      return { layer: e.layer, pts: [[e.a[0], e.a[1]], [e.b[0], e.b[1]]], zs: [e.a[2], e.b[2]] };
+    const pts = e.verts.slice();
+    if (e.closed && pts.length > 2) pts.push(pts[0].slice());
+    return { layer: e.layer, pts, zs: [e.elev] };
+  }).filter(e => e.pts.length >= 2);
+}
+
+function importDXF(text, srcName){
+  const ents = parseDXFEntities(text);
+  if (!ents.length){ toast("No LINE / LWPOLYLINE entities in " + srcName); return; }
+  const all = [];
+  ents.forEach(e => e.pts.forEach(p => all.push(p)));
+  const proj = detectProjection(all);
+  let toLL;
+  if (proj){
+    toLL = (x, y) => tmInverse(x, y, proj);
+    toast(proj.name + " detected — reprojected to WGS84");
+  } else {
+    let sx = 0, sy = 0;
+    all.forEach(([x, y]) => { sx += x; sy += y; });
+    const cx = sx / all.length, cy = sy / all.length;
+    const c = map.getCenter();
+    const mLat = 111320, mLon = 111320 * Math.cos(c.lat * Math.PI / 180);
+    toLL = (x, y) => [c.lat + (y - cy) / mLat, c.lng + (x - cx) / mLon];
+    toast("Local coordinates — centred on current view");
+  }
+  const groups = new Map();
+  const counters = {};
+  ents.forEach(en => {
+    counters[en.layer] = (counters[en.layer] || 0) + 1;
+    if (!groups.has(en.layer)) groups.set(en.layer, []);
+    groups.get(en.layer).push({
+      name: en.layer + " · " + counters[en.layer], kind: "line",
+      latlngs: en.pts.map(([x, y]) => toLL(x, y)), zs: en.zs,
+    });
+  });
+  let bounds = null;
+  groups.forEach((feats, name) => {
+    const b = addLayer(name, feats, srcName);
+    bounds = bounds ? bounds.extend(b) : b;
+  });
+  if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+}
+
+/* ---------- file picker + drag-drop ---------- */
+function handleFiles(fileList){
+  [...fileList].forEach(f => {
+    const ext = f.name.split(".").pop().toLowerCase();
+    if (["jpg", "jpeg", "png", "webp"].includes(ext)){ handlePhoto(f); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (ext === "kml") importKML(reader.result, f.name.replace(/\.kml$/i, ""));
+      else if (ext === "dxf") importDXF(reader.result, f.name);
+      else if (ext === "json") loadJob(reader.result);
+      else toast("Unsupported file: " + f.name);
+    };
+    reader.readAsText(f);
+  });
+}
+$("#fileInput").addEventListener("change", e => {
+  handleFiles(e.target.files);
+  e.target.value = "";
+});
+$("#btnImport").addEventListener("click", () => $("#fileInput").click());
+$("#btnImport2").addEventListener("click", () => $("#fileInput").click());
+
+window.addEventListener("dragover", e => {
+  e.preventDefault();
+  $("#dropOverlay").classList.add("show");
+});
+window.addEventListener("dragleave", e => {
+  if (!e.relatedTarget) $("#dropOverlay").classList.remove("show");
+});
+window.addEventListener("drop", e => {
+  e.preventDefault();
+  $("#dropOverlay").classList.remove("show");
+  if (e.dataTransfer && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+
+/* ---------- panels + bottom nav ---------- */
+const PANELS = ["layers", "measure", "pin", "notes"];
+let activePanel = null;
+function setPanel(name){
+  activePanel = activePanel === name ? null : name;
+  PANELS.forEach(p =>
+    document.getElementById("panel-" + p).classList.toggle("open", p === activePanel));
+  document.querySelectorAll("#nav button").forEach(b =>
+    b.classList.toggle("on", b.dataset.panel === activePanel));
+  state.tool = activePanel === "measure" ? "measure" :
+               activePanel === "pin" ? "pin" : null;
+  $("#map").classList.toggle("crosshair", !!state.tool);
+  if (activePanel !== "pin") cancelPendingPin();
+}
+document.querySelectorAll("#nav button").forEach(b =>
+  b.addEventListener("click", () => setPanel(b.dataset.panel)));
+document.querySelectorAll(".pclose").forEach(b =>
+  b.addEventListener("click", () => setPanel(activePanel)));
+
+map.on("click", e => {
+  if (state.tool === "measure") measureAdd(e.latlng);
+  else if (state.tool === "pin") pinAt(e.latlng);
+});
+map.on("popupopen", e => {
+  if (state.tool){ map.closePopup(); return; }
+  const el = e.popup.getElement();
+  // hydrate photo thumbnails inside pin popups from IndexedDB
+  const img = el.querySelector(".pop-photo[data-pid]");
+  if (img) photoGet(+img.dataset.pid).then(src => { if (src) img.src = src; });
+  // distance + bearing from the live GPS fix, so crew can relate the plan to where they stand
+  const ll = e.popup.getLatLng && e.popup.getLatLng();
+  const pop = el.querySelector(".pop");
+  if (ll && lastFix && pop && !pop.querySelector(".pop-here")){
+    const toRad = x => x * Math.PI / 180;
+    const y = Math.sin(toRad(ll.lng - lastFix.lng)) * Math.cos(toRad(ll.lat));
+    const x = Math.cos(toRad(lastFix.lat)) * Math.sin(toRad(ll.lat))
+      - Math.sin(toRad(lastFix.lat)) * Math.cos(toRad(ll.lat)) * Math.cos(toRad(ll.lng - lastFix.lng));
+    const brg = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    const compass = ["N","NE","E","SE","S","SW","W","NW"][Math.round(brg / 45) % 8];
+    const s = document.createElement("span");
+    s.className = "pop-here";
+    s.textContent = fmtDist(map.distance(lastFix, ll)) + " " + compass + " of you";
+    pop.appendChild(s);
+  }
+});
+
+/* ---------- measure tool ---------- */
+const meas = { pts: [], dots: [], line: null, total: 0 };
+function measureAdd(ll){
+  meas.pts.push(ll);
+  meas.dots.push(L.circleMarker(ll, { radius: 5, color: "#fff", weight: 2,
+    fillColor: THEME.accent, fillOpacity: 1, interactive: false }).addTo(map));
+  if (!meas.line)
+    meas.line = L.polyline([], { color: THEME.accent, weight: 3, dashArray: "1 7",
+      lineCap: "round", interactive: false }).addTo(map);
+  refreshMeasure();
+}
+function refreshMeasure(){
+  if (meas.line) meas.line.setLatLngs(meas.pts);
+  meas.total = 0;
+  for (let i = 1; i < meas.pts.length; i++)
+    meas.total += map.distance(meas.pts[i - 1], meas.pts[i]);
+  $("#measTotal").textContent = fmtDist(meas.total);
+  $("#measPts").textContent = meas.pts.length
+    ? `${meas.pts.length} point${meas.pts.length > 1 ? "s" : ""}`
+    : "tap the map to start";
+  meas.dots.forEach(d => { if (d.getTooltip()) d.unbindTooltip(); });
+  if (meas.dots.length > 1)
+    meas.dots[meas.dots.length - 1]
+      .bindTooltip(fmtDist(meas.total), { permanent: true, direction: "top",
+        offset: [0, -7], className: "meas-tip" })
+      .openTooltip();
+}
+$("#measUndo").addEventListener("click", () => {
+  if (!meas.pts.length) return;
+  meas.pts.pop();
+  map.removeLayer(meas.dots.pop());
+  refreshMeasure();
+});
+$("#measClear").addEventListener("click", () => {
+  meas.dots.forEach(d => map.removeLayer(d));
+  if (meas.line) map.removeLayer(meas.line);
+  meas.pts = []; meas.dots = []; meas.line = null;
+  refreshMeasure();
+});
+
+/* ---------- saved sections ---------- */
+const sectionLayers = new Map();
+const SECKEY = "fsm:" + PRELOADED_DATA.projectTitle + ":sections";
+function drawSection(s){
+  const line = L.polyline(s.latlngs, { color: THEME.accent, weight: 3, opacity: 0.95 });
+  line.bindTooltip(`${s.name} — ${fmtDist(s.dist)}`,
+    { permanent: true, direction: "center", className: "sec-tip" });
+  line.bindPopup(`<div class="pop"><b>${esc(s.name)}</b>` +
+    `<span class="pop-rl">${fmtDist(s.dist)}</span><span>${s.ts}</span>` +
+    `<button class="pop-del" onclick="deleteSection(${s.id})">Delete section</button></div>`);
+  line.on("click", toolForward);
+  line.addTo(map);
+  sectionLayers.set(s.id, line);
+}
+function saveSection(){
+  if (meas.pts.length < 2){ toast("Measure at least two points first"); return; }
+  const name = $("#secName").value.trim() || `Section ${state.sections.length + 1}`;
+  const s = { id: Date.now(), name, dist: meas.total,
+    latlngs: meas.pts.map(ll => [ll.lat, ll.lng]),
+    ts: new Date().toISOString().slice(0, 10) };
+  state.sections.push(s);
+  drawSection(s);
+  persistSections();
+  renderSections();
+  $("#secName").value = "";
+  $("#measClear").click();
+  toast(`Saved ${name} — ${fmtDist(s.dist)}`);
+}
+window.deleteSection = id => {
+  const l = sectionLayers.get(id);
+  if (l) map.removeLayer(l);
+  sectionLayers.delete(id);
+  state.sections = state.sections.filter(s => s.id !== id);
+  persistSections();
+  renderSections();
+  toast("Section deleted");
+};
+function persistSections(){
+  try { localStorage.setItem(SECKEY, JSON.stringify(state.sections)); } catch (e) {}
+}
+function renderSections(){
+  const box = $("#secList");
+  if (!state.sections.length){ box.innerHTML = ""; return; }
+  box.innerHTML = "";
+  state.sections.forEach(s => {
+    const row = document.createElement("div");
+    row.className = "note-item";
+    row.innerHTML =
+      `<span class="note-txt"><b>${esc(s.name)}</b><small>${fmtDist(s.dist)} · ${s.ts}</small></span>` +
+      `<button class="note-del" aria-label="Delete section">&#10005;</button>`;
+    row.addEventListener("click", e => {
+      if (e.target.closest(".note-del")){ deleteSection(s.id); return; }
+      const l = sectionLayers.get(s.id);
+      if (l) map.fitBounds(l.getBounds().pad(0.4));
+    });
+    box.appendChild(row);
+  });
+}
+$("#secSaveBtn").addEventListener("click", saveSection);
+$("#secName").addEventListener("keydown", e => { if (e.key === "Enter") saveSection(); });
+
+/* ---------- IndexedDB (photos + imported-layer persistence; localStorage is too small) ---------- */
+let idbPromise = null;
+function idb(){
+  if (!idbPromise) idbPromise = new Promise((res, rej) => {
+    const r = indexedDB.open("fsm-photos", 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains("photos")) db.createObjectStore("photos");
+      if (!db.objectStoreNames.contains("kv")) db.createObjectStore("kv");
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+  return idbPromise;
+}
+async function kvPut(key, val){
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("kv", "readwrite");
+    tx.objectStore("kv").put(val, key);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function kvGet(key){
+  try {
+    const db = await idb();
+    return await new Promise((res, rej) => {
+      const rq = db.transaction("kv").objectStore("kv").get(key);
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+  } catch (e) { return null; }
+}
+/* imported layers survive a refresh; preloaded ones re-import from the file itself */
+function persistLayers(){
+  const data = state.layers.filter(l => l.origin === "import")
+    .map(l => ({ name: l.name, source: l.source, color: l.color,
+      visible: l.visible, feats: l.feats }));
+  kvPut("layers", data).catch(() => {});
+}
+async function restoreLayers(){
+  const data = await kvGet("layers");
+  if (!Array.isArray(data) || !data.length) return;
+  let bounds = null;
+  data.forEach(l => {
+    const b = addLayer(l.name, l.feats || [], l.source || "saved",
+      { color: l.color, visible: l.visible, origin: "import" });
+    bounds = bounds ? bounds.extend(b) : b;
+  });
+  if (!PRELOADED_DATA.kml.length && bounds && bounds.isValid())
+    map.fitBounds(bounds.pad(0.2));
+  toast(`Restored ${data.length} layer${data.length > 1 ? "s" : ""} from last session`);
+}
+async function photoPut(id, dataUrl){
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("photos", "readwrite");
+    tx.objectStore("photos").put(dataUrl, id);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function photoGet(id){
+  try {
+    const db = await idb();
+    return await new Promise((res, rej) => {
+      const rq = db.transaction("photos").objectStore("photos").get(id);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => rej(rq.error);
+    });
+  } catch (e) { return null; }
+}
+async function photoDel(id){
+  try {
+    const db = await idb();
+    db.transaction("photos", "readwrite").objectStore("photos").delete(id);
+  } catch (e) {}
+}
+
+/* ---------- EXIF GPS (JPEG APP1 → TIFF → GPS IFD) ---------- */
+function exifLatLon(buf){
+  try {
+    const v = new DataView(buf);
+    if (v.byteLength < 4 || v.getUint16(0) !== 0xFFD8) return null;
+    let off = 2;
+    while (off + 4 <= v.byteLength){
+      if (v.getUint8(off) !== 0xFF) break;
+      const marker = v.getUint8(off + 1);
+      if (marker === 0xDA) break;                              // start of scan — no EXIF
+      const len = v.getUint16(off + 2);
+      if (marker === 0xE1 && off + 10 <= v.byteLength &&
+          v.getUint32(off + 4) === 0x45786966)                 // "Exif"
+        return gpsFromTiff(v, off + 10);
+      off += 2 + len;
+    }
+  } catch (e) {}
+  return null;
+}
+function gpsFromTiff(v, base){
+  const le = v.getUint16(base) === 0x4949;                     // "II" little-endian
+  const u16 = o => v.getUint16(base + o, le);
+  const u32 = o => v.getUint32(base + o, le);
+  if (u16(2) !== 42) return null;
+  const ifd0 = u32(4);
+  let gpsOff = 0;
+  const n = u16(ifd0);
+  for (let i = 0; i < n; i++){
+    const e = ifd0 + 2 + i * 12;
+    if (u16(e) === 0x8825){ gpsOff = u32(e + 8); break; }
+  }
+  if (!gpsOff) return null;
+  const dms = o => {                                           // 3 RATIONALs → decimal degrees
+    let d = 0;
+    for (let i = 0; i < 3; i++){
+      const num = u32(o + i * 8), den = u32(o + i * 8 + 4);
+      d += (den ? num / den : 0) / [1, 60, 3600][i];
+    }
+    return d;
+  };
+  let latRef = "N", lonRef = "E", lat = null, lon = null;
+  const m = u16(gpsOff);
+  for (let i = 0; i < m; i++){
+    const e = gpsOff + 2 + i * 12, tag = u16(e);
+    if (tag === 1) latRef = String.fromCharCode(v.getUint8(base + e + 8));
+    else if (tag === 2) lat = dms(u32(e + 8));
+    else if (tag === 3) lonRef = String.fromCharCode(v.getUint8(base + e + 8));
+    else if (tag === 4) lon = dms(u32(e + 8));
+  }
+  if (lat == null || lon == null || (!lat && !lon)) return null;
+  return [latRef === "S" ? -lat : lat, lonRef === "W" ? -lon : lon];
+}
+
+function downscalePhoto(file){
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * s);
+      c.height = Math.round(img.height * s);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      res(c.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); res(null); };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handlePhoto(file){
+  let coords = null;
+  try { coords = exifLatLon(await file.arrayBuffer()); } catch (e) {}
+  const dataUrl = await downscalePhoto(file);
+  if (!dataUrl){ toast("Could not read that image"); return; }
+  if (activePanel !== "pin") setPanel("pin");
+  if (coords){
+    startPendingPin(L.latLng(coords[0], coords[1]), dataUrl);
+    toast("Pinned at the photo's GPS position");
+  } else if (lastFix){
+    startPendingPin(lastFix, dataUrl);
+    toast("No GPS in photo — pinned at your position");
+  } else {
+    navigator.geolocation.getCurrentPosition(
+      p => {
+        startPendingPin(L.latLng(p.coords.latitude, p.coords.longitude), dataUrl);
+        toast("No GPS in photo — pinned at your position");
+      },
+      () => {
+        pendingPhoto = dataUrl;
+        toast("No location available — tap the map to place the photo", 4500);
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
+  }
+}
+$("#photoInput").addEventListener("change", e => {
+  if (e.target.files.length) handlePhoto(e.target.files[0]);
+  e.target.value = "";
+});
+$("#btnPhotoPin").addEventListener("click", () => $("#photoInput").click());
+
+/* ---------- pins + notes ---------- */
+function pinSvg(){
+  return `<svg viewBox="0 0 24 24" width="34" height="34"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" fill="${THEME.accent}" stroke="#0c0f12" stroke-width="1.2"/><circle cx="12" cy="9" r="2.6" fill="#0c0f12"/></svg>`;
+}
+function pinPhotoSvg(){
+  return `<svg viewBox="0 0 24 24" width="34" height="34"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z" fill="${THEME.accent}" stroke="#0c0f12" stroke-width="1.2"/><rect x="8.6" y="7" width="6.8" height="5" rx="1" fill="#0c0f12"/><circle cx="12" cy="9.5" r="1.4" fill="${THEME.accent}"/></svg>`;
+}
+function pinIcon(temp, photo){
+  return L.divIcon({ className: "", iconSize: [34, 34], iconAnchor: [17, 32],
+    popupAnchor: [0, -30],
+    html: `<div class="pin-marker${temp ? " temp" : ""}">${photo ? pinPhotoSvg() : pinSvg()}</div>` });
+}
+const pinMarkers = new Map();
+const LSKEY = "fsm:" + PRELOADED_DATA.projectTitle;
+let pending = null;       // { marker, latlng, photo }
+let pendingPhoto = null;  // photo waiting for a map tap (no location available)
+
+function startPendingPin(ll, photo){
+  if (pending){ map.removeLayer(pending.marker); pending = null; }
+  pending = { latlng: ll, photo: photo || null,
+    marker: L.marker(ll, { icon: pinIcon(true, !!photo), zIndexOffset: 900 }).addTo(map) };
+  $("#pinHint").hidden = true;
+  $("#pinActions").style.display = "none";
+  $("#pinForm").hidden = false;
+  const th = $("#pinThumb");
+  if (photo){ th.src = photo; th.hidden = false; } else th.hidden = true;
+  if (!map.getBounds().contains(ll))
+    map.flyTo(ll, Math.max(map.getZoom(), 17), { duration: 0.8 });
+  setTimeout(() => $("#pinNote").focus(), 60);
+}
+function pinAt(ll){
+  if (pending){ pending.marker.setLatLng(ll); pending.latlng = ll; return; }
+  startPendingPin(ll, pendingPhoto);
+  pendingPhoto = null;
+}
+function cancelPendingPin(){
+  if (pending){ map.removeLayer(pending.marker); pending = null; }
+  pendingPhoto = null;
+  $("#pinForm").hidden = true;
+  $("#pinThumb").hidden = true;
+  $("#pinHint").hidden = false;
+  $("#pinActions").style.display = "";
+  $("#pinNote").value = "";
+}
+async function savePin(){
+  if (!pending) return;
+  const note = $("#pinNote").value.trim() || (pending.photo ? "Photo" : "Pin");
+  const d = new Date();
+  const p = { id: Date.now(), lat: pending.latlng.lat, lng: pending.latlng.lng, note,
+    photo: !!pending.photo,
+    ts: d.toISOString().slice(0, 10) + " " + d.toTimeString().slice(0, 5) };
+  if (pending.photo){
+    try { await photoPut(p.id, pending.photo); }
+    catch (e) { toast("Photo could not be stored (storage full?)"); p.photo = false; }
+  }
+  state.pins.push(p);
+  drawPin(p);
+  persistPins();
+  renderNotes();
+  cancelPendingPin();
+  toast("Pin saved");
+}
+$("#pinSave").addEventListener("click", savePin);
+$("#pinCancel").addEventListener("click", cancelPendingPin);
+$("#pinNote").addEventListener("keydown", e => { if (e.key === "Enter") savePin(); });
+$("#btnPinHere").addEventListener("click", () => {
+  if (lastFix){ startPendingPin(lastFix, null); return; }
+  toast("Getting GPS fix…");
+  navigator.geolocation.getCurrentPosition(
+    p => startPendingPin(L.latLng(p.coords.latitude, p.coords.longitude), null),
+    e => toast(gpsErrText(e.code), 6500),
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+});
+
+function drawPin(p){
+  const m = L.marker([p.lat, p.lng], { icon: pinIcon(false, p.photo) }).addTo(map);
+  m.bindPopup(`<div class="pop"><b>${esc(p.note)}</b><span>${p.ts}</span>` +
+    (p.photo ? `<img class="pop-photo" data-pid="${p.id}" alt="site photo">` : "") +
+    `<button class="pop-del" onclick="deletePin(${p.id})">Delete pin</button></div>`);
+  pinMarkers.set(p.id, m);
+}
+window.deletePin = id => {
+  const m = pinMarkers.get(id);
+  if (m) map.removeLayer(m);
+  pinMarkers.delete(id);
+  state.pins = state.pins.filter(p => p.id !== id);
+  photoDel(id);
+  persistPins();
+  renderNotes();
+  toast("Pin deleted");
+};
+function persistPins(){
+  try { localStorage.setItem(LSKEY, JSON.stringify(state.pins)); } catch (e) {}
+}
+function renderNotes(){
+  const box = $("#noteList");
+  if (!state.pins.length){ box.innerHTML = '<div class="empty">No pins yet.</div>'; return; }
+  box.innerHTML = "";
+  const ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21s-7-6.6-7-11.5a7 7 0 0 1 14 0C19 14.4 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.4"/></svg>';
+  state.pins.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "note-item";
+    row.innerHTML =
+      (p.photo ? `<img class="note-thumb" data-pid="${p.id}" alt="">`
+               : `<span class="note-ico">${ICO}</span>`) +
+      `<span class="note-txt"><b>${esc(p.note)}</b><small>${p.ts}</small></span>` +
+      `<button class="note-del" aria-label="Delete pin">&#10005;</button>`;
+    row.addEventListener("click", e => {
+      if (e.target.closest(".note-del")){ deletePin(p.id); return; }
+      if (e.target.classList.contains("note-thumb") && e.target.src){
+        openViewer(e.target.src, p.note, p.ts);
+        return;
+      }
+      if (activePanel === "notes") setPanel("notes");
+      map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 18), { duration: 0.8 });
+      const m = pinMarkers.get(p.id);
+      if (m) setTimeout(() => m.openPopup(), 850);
+    });
+    box.appendChild(row);
+    if (p.photo) photoGet(p.id).then(src => {
+      const img = row.querySelector(".note-thumb");
+      if (img && src) img.src = src;
+    });
+  });
+}
+
+/* ---------- photo viewer ---------- */
+function openViewer(src, cap, sub){
+  const v = $("#photoViewer");
+  v.querySelector("img").src = src;
+  v.querySelector(".cap").textContent = cap || "";
+  v.querySelector(".sub").textContent = sub || "";
+  v.classList.add("show");
+}
+$("#photoViewer").addEventListener("click", () =>
+  $("#photoViewer").classList.remove("show"));
+
+/* ---------- longsection profile (zoom / pan / layer toggles) ---------- */
+const LS = { W: 920, H: 380, mL: 64, mR: 24, mT: 22, mB: 52 };
+LS.pw = LS.W - LS.mL - LS.mR;
+LS.ph = LS.H - LS.mT - LS.mB;
+let lsState = null, lsRaf = 0;
+
+function gradeText(dx, dz){
+  if (Math.abs(dz) < 0.005) return "level";
+  if (Math.abs(dz) > dx) return (dz < 0 ? "↓" : "↑") + " steep"; // near-vertical (e.g. bad node)
+  return (dz < 0 ? "↓" : "↑") + " 1 in " + Math.round(dx / Math.abs(dz));
+}
+// CAD-style vertical dimension leader between two levels at chainage-x, value in metres
+function dimLeader(x, ya, yb, label, color){
+  const top = Math.min(ya, yb), bot = Math.max(ya, yb), gap = bot - top;
+  const xd = x + 12, ah = 4, f = n => n.toFixed(1);
+  let s = "";
+  // witness (extension) lines from each measured level out to the dimension line
+  s += `<line x1="${f(x)}" y1="${f(top)}" x2="${f(xd + 4)}" y2="${f(top)}" stroke="${color}" stroke-width="0.8" opacity="0.7"/>`;
+  s += `<line x1="${f(x)}" y1="${f(bot)}" x2="${f(xd + 4)}" y2="${f(bot)}" stroke="${color}" stroke-width="0.8" opacity="0.7"/>`;
+  // dimension line + arrowhead terminators (apex at each extent)
+  s += `<line x1="${f(xd)}" y1="${f(top)}" x2="${f(xd)}" y2="${f(bot)}" stroke="${color}" stroke-width="1"/>`;
+  s += `<path d="M${f(xd)},${f(top)} l-3,${ah} l6,0 z" fill="${color}"/>`;
+  s += `<path d="M${f(xd)},${f(bot)} l-3,${-ah} l6,0 z" fill="${color}"/>`;
+  // value text — beside the midpoint, or above when the gap is too small to fit
+  const ty = gap >= 16 ? (top + bot) / 2 + 3.5 : top - 5;
+  s += `<text x="${f(xd + 7)}" y="${f(ty)}" fill="${color}" font-size="10.5" font-weight="600" text-anchor="start">${label}</text>`;
+  return s;
+}
+function percentile(sorted, p){
+  const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+}
+// linear-interpolate the profiled string's level at an arbitrary chainage
+function zAtChain(ch, zs, c){
+  if (c <= ch[0]) return zs[0];
+  for (let i = 1; i < ch.length; i++)
+    if (c <= ch[i]){
+      const t = (c - ch[i - 1]) / ((ch[i] - ch[i - 1]) || 1);
+      return zs[i - 1] + t * (zs[i] - zs[i - 1]);
+    }
+  return zs[zs.length - 1];
+}
+// 2D segment intersection in lon/lat (affine-safe: preserves crossing + params t,u)
+function segInt(x1, y1, x2, y2, x3, y3, x4, y4){
+  const d = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(d) < 1e-14) return null;
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / d;
+  const u = ((x1 - x3) * (y1 - y2) - (y1 - y3) * (x1 - x2)) / d;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return { t, u };
+}
+// where other-service lines cross the profiled string, in plan, with the crosser's RL if known
+function computeCrossings(f, ch, profiledLayer){
+  const out = [];
+  const P = f.latlngs;
+  state.layers.forEach(l => {
+    if (!l.visible || l.name === profiledLayer) return; // skip own layer (connectivity, not crossings)
+    l.feats.forEach(q => {
+      if (q === f || q.kind !== "line" || q.latlngs.length < 2) return;
+      const Q = q.latlngs;
+      for (let i = 0; i + 1 < P.length; i++)
+        for (let j = 0; j + 1 < Q.length; j++){
+          const r = segInt(P[i][1], P[i][0], P[i + 1][1], P[i + 1][0],
+                           Q[j][1], Q[j][0], Q[j + 1][1], Q[j + 1][0]);
+          if (!r) continue;
+          const chain = ch[i] + r.t * (ch[i + 1] - ch[i]);
+          let z = null;
+          if (q.zs && Number.isFinite(q.zs[j]) && Number.isFinite(q.zs[j + 1]))
+            z = q.zs[j] + r.u * (q.zs[j + 1] - q.zs[j]);
+          else if (q.zs && q.zs.length === 1 && Number.isFinite(q.zs[0]))
+            z = q.zs[0];
+          const pz = zAtChain(ch, f.zs, chain);
+          const dz = (z != null && Number.isFinite(pz)) ? z - pz : null; // crossing − profiled
+          out.push({ chain, z, pz, dz, color: l.color, name: l.name });
+        }
+    });
+  });
+  // dedupe: a crossing landing on a profiled vertex registers on both adjoining segments
+  out.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : a.chain - b.chain);
+  const dedup = [];
+  for (const c of out){
+    const p = dedup[dedup.length - 1];
+    if (p && p.name === c.name && Math.abs(p.chain - c.chain) < 0.5) continue;
+    dedup.push(c);
+  }
+  return dedup.sort((a, b) => a.chain - b.chain);
+}
+function openLongsection(fid){
+  const rec = featRegistry.get(fid);
+  if (!rec) return;
+  const { f } = rec;
+  const ch = [0];
+  for (let i = 1; i < f.latlngs.length; i++)
+    ch.push(ch[i - 1] + map.distance(f.latlngs[i - 1], f.latlngs[i]));
+  const zs = f.zs.slice();
+  const total = ch[ch.length - 1] || 1;
+  const zMin = Math.min(...zs), zMax = Math.max(...zs);
+  const fall = zs[0] - zs[zs.length - 1];
+  // robust default RL range — clip outlier nodes (e.g. 0.00 end levels) on long strings
+  let lo = zMin, hi = zMax;
+  if (zs.length > 12){
+    const s = zs.slice().sort((a, b) => a - b);
+    lo = percentile(s, 0.02); hi = percentile(s, 0.98);
+    if (hi - lo < 0.2){ lo = zMin; hi = zMax; }
+  }
+  const crossings = computeCrossings(f, ch, rec.layerName);
+  // fold sane crossing levels into the RL window so clearances are visible by default
+  const saneCross = crossings.filter(c => c.z != null && c.z >= zMin - 10 && c.z <= zMax + 10)
+    .map(c => c.z);
+  let dLo = lo, dHi = hi, aLo = zMin, aHi = zMax;
+  if (saneCross.length){
+    dLo = Math.min(dLo, ...saneCross); dHi = Math.max(dHi, ...saneCross);
+    aLo = Math.min(aLo, ...saneCross); aHi = Math.max(aHi, ...saneCross);
+  }
+  const padD = Math.max((dHi - dLo) * 0.15, 0.25);
+  const padA = Math.max((aHi - aLo) * 0.15, 0.25);
+  lsState = {
+    rec, ch, zs, total, zMin, zMax, fall, crossings,
+    fitData: { z0: dLo - padD, z1: dHi + padD },
+    fitAll:  { z0: aLo - padA, z1: aHi + padA },
+    view: { x0: 0, x1: total, z0: dLo - padD, z1: dHi + padD },
+    show: { rl: true, grade: true, pts: true, cross: true },
+  };
+  $("#lsHead").textContent = f.name;
+  $("#lsSub").textContent = `${rec.layerName}  ·  length ${fmtDist(total)}  ·  ` +
+    `fall ${fall.toFixed(2)} m  ·  RL ${zMin.toFixed(2)}–${zMax.toFixed(2)}` +
+    (zs.length > 12 && (lo > zMin + 0.01 || hi < zMax - 0.01) ? "  ·  auto-fit to data" : "") +
+    (crossings.length ? `  ·  ${crossings.length} crossing${crossings.length > 1 ? "s" : ""}` : "") +
+    (crossings.some(c => c.dz != null) ? `  ·  Δ = ${CROSSING_DATUM}` : "");
+  document.querySelectorAll("#lsCtrls [data-t]").forEach(b =>
+    b.classList.toggle("on", lsState.show[b.dataset.t]));
+  lsRender();
+  $("#lsView").classList.add("show");
+}
+function lsRender(){
+  if (!lsState) return;
+  const tipEl = document.getElementById("lsTip");
+  if (tipEl) tipEl.classList.remove("show"); // any re-render (zoom/pan/toggle) drops the tooltip
+  const { ch, zs, view, show, rec } = lsState;
+  const { W, H, mL, mR, mT, mB, pw, ph } = LS;
+  const { x0, x1, z0, z1 } = view;
+  const sx = c => mL + (c - x0) / (x1 - x0) * pw;
+  const sy = z => mT + (z1 - z) / (z1 - z0) * ph;
+  const inX = c => c >= x0 - 1e-6 && c <= x1 + 1e-6;
+  const inZ = z => z >= z0 && z <= z1;
+
+  const zspan = z1 - z0;
+  const zstep = zspan > 20 ? 5 : zspan > 8 ? 2 : zspan > 4 ? 1 : zspan > 1.6 ? 0.5 : zspan > 0.8 ? 0.2 : 0.1;
+  const zdp = zstep < 0.2 ? 2 : zstep < 1 ? 1 : 0;
+  let grid = "";
+  for (let z = Math.ceil(z0 / zstep) * zstep; z <= z1; z += zstep){
+    const y = sy(z).toFixed(1);
+    grid += `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="#262d35"/>` +
+      `<text x="${mL - 8}" y="${(+y + 4).toFixed(1)}" fill="#8c96a3" font-size="11" text-anchor="end">${z.toFixed(zdp)}</text>`;
+  }
+  const xspan = x1 - x0;
+  const xstep = xspan > 400 ? 100 : xspan > 150 ? 50 : xspan > 60 ? 20 : xspan > 25 ? 10 : xspan > 8 ? 5 : 2;
+  let xticks = "";
+  for (let c = Math.ceil(x0 / xstep) * xstep; c <= x1; c += xstep){
+    const x = sx(c).toFixed(1);
+    xticks += `<line x1="${x}" y1="${mT}" x2="${x}" y2="${mT + ph}" stroke="#1c2127"/>` +
+      `<text x="${x}" y="${H - mB + 18}" fill="#8c96a3" font-size="11" text-anchor="middle">${Math.round(c)}</text>`;
+  }
+  const pts = ch.map((c, i) => `${sx(c).toFixed(1)},${sy(zs[i]).toFixed(1)}`).join(" ");
+  // dots + RL labels, thinned by horizontal spacing so they declutter as you zoom
+  let dots = "", rllab = "", lastDot = -1e9, lastRL = -1e9;
+  for (let i = 0; i < ch.length; i++){
+    if (!inX(ch[i]) || !inZ(zs[i])) continue;
+    const x = sx(ch[i]), y = sy(zs[i]);
+    if (show.pts && x - lastDot >= 5){
+      dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${THEME.accent}" stroke="#0c0f12"/>`;
+      lastDot = x;
+    }
+    if (show.rl && x - lastRL >= 42){
+      rllab += `<text x="${x.toFixed(1)}" y="${(y - 9).toFixed(1)}" fill="#e8eaed" font-size="10.5" text-anchor="middle">${zs[i].toFixed(2)}</text>`;
+      lastRL = x;
+    }
+  }
+  let grades = "", lastG = -1e9;
+  if (show.grade){
+    for (let i = 1; i < ch.length; i++){
+      if (!inZ(zs[i - 1]) || !inZ(zs[i])) continue;
+      const xm = (sx(ch[i - 1]) + sx(ch[i])) / 2;
+      if (xm < mL || xm > W - mR || xm - lastG < 62) continue;
+      const ym = (sy(zs[i - 1]) + sy(zs[i])) / 2 + 15;
+      grades += `<text x="${xm.toFixed(1)}" y="${ym.toFixed(1)}" fill="${THEME.accent}" font-size="10.5" text-anchor="middle">${gradeText(ch[i] - ch[i - 1], zs[i] - zs[i - 1])}</text>`;
+      lastG = xm;
+    }
+  }
+  // service crossings — vertical line in the crosser's colour, diamond + RL at its level if known
+  let crossLines = "", crossMarks = "", lastC = -1e9;
+  if (show.cross && lsState.crossings){
+    lsState.crossings.forEach(c => {
+      if (!inX(c.chain)) return;
+      const x = sx(c.chain);
+      crossLines += `<line x1="${x.toFixed(1)}" y1="${mT}" x2="${x.toFixed(1)}" y2="${mT + ph}" stroke="${c.color}" stroke-width="1.3" stroke-dasharray="4 4" opacity="0.8"/>`;
+      if (c.z != null && inZ(c.z)){
+        const y = sy(c.z);
+        crossMarks += `<rect x="${(x - 3.6).toFixed(1)}" y="${(y - 3.6).toFixed(1)}" width="7.2" height="7.2" transform="rotate(45 ${x.toFixed(1)} ${y.toFixed(1)})" fill="${c.color}" stroke="#0c0f12"/>`;
+        if (x - lastC >= 30){
+          crossMarks += `<text x="${x.toFixed(1)}" y="${(y + 17).toFixed(1)}" fill="${c.color}" font-size="10" text-anchor="middle">${c.z.toFixed(2)}</text>`;
+          lastC = x;
+        }
+        // RL difference shown as a dimension leader between the two pipe levels
+        if (c.dz != null && Number.isFinite(c.pz) && inZ(c.pz)){
+          crossMarks += dimLeader(x, sy(c.pz), sy(c.z), `${Math.abs(c.dz).toFixed(2)} m`, c.color);
+        }
+      } else if (c.z != null){
+        // level known but off the current RL window — flag it at the edge with direction
+        const top = c.z > z1;
+        crossMarks += `<text x="${x.toFixed(1)}" y="${top ? (mT + 11).toFixed(1) : (mT + ph - 4).toFixed(1)}" fill="${c.color}" font-size="9.5" text-anchor="middle">${top ? "▲" : "▼"} ${c.z.toFixed(2)}</text>`;
+      } else {
+        crossMarks += `<text x="${x.toFixed(1)}" y="${(mT + 11).toFixed(1)}" fill="${c.color}" font-size="9" text-anchor="middle">RL?</text>`;
+      }
+    });
+  }
+  $("#lsBody").innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">` +
+    `<defs><clipPath id="lsclip"><rect x="${mL}" y="${mT}" width="${pw}" height="${ph}"/></clipPath></defs>` +
+    grid + xticks + crossLines +
+    `<g clip-path="url(#lsclip)"><polyline points="${pts}" fill="none" stroke="${rec.color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}</g>` +
+    crossMarks + rllab + grades +
+    `<text x="${mL + pw / 2}" y="${H - 6}" fill="#8c96a3" font-size="11" text-anchor="middle">Chainage (m)</text>` +
+    `<text x="16" y="${mT + ph / 2}" fill="#8c96a3" font-size="11" text-anchor="middle" transform="rotate(-90 16 ${mT + ph / 2})">RL (m)</text>` +
+    `<circle id="lsHi" r="7" fill="none" stroke="#fff" stroke-width="1.6" opacity="0"/>` +
+    `</svg>`;
+}
+// hover/tap readout — nearest vertex or crossing under the pointer
+function lsHover(clientX, clientY){
+  if (!lsState || lsDrag || lsPointers.size >= 2) return;
+  const svg = $("#lsBody svg");
+  if (!svg) return;
+  const r = svg.getBoundingClientRect();
+  const { W, H, mL, mT, pw, ph } = LS;
+  const { x0, x1, z0, z1 } = lsState.view;
+  const sx = c => mL + (c - x0) / (x1 - x0) * pw;
+  const sy = z => mT + (z1 - z) / (z1 - z0) * ph;
+  const toClient = (c, z) => ({
+    x: r.left + sx(c) / W * r.width,
+    y: r.top + sy(z) / H * r.height });
+  let best = null, bestD = 16;
+  for (let i = 0; i < lsState.ch.length; i++){
+    const c = lsState.ch[i], z = lsState.zs[i];
+    if (c < x0 || c > x1 || z < z0 || z > z1) continue;
+    const p = toClient(c, z), d = Math.hypot(p.x - clientX, p.y - clientY);
+    if (d < bestD){ bestD = d; best = { type: "v", c, z }; }
+  }
+  lsState.crossings.forEach(cr => {
+    if (cr.chain < x0 || cr.chain > x1) return;
+    const p = toClient(cr.chain, cr.z != null ? cr.z : z1);
+    const d = Math.hypot(p.x - clientX, p.y - clientY);
+    if (d < bestD){ bestD = d; best = { type: "x", cr }; }
+  });
+  const tip = $("#lsTip"), hi = svg.querySelector("#lsHi");
+  if (!best){ tip.classList.remove("show"); if (hi) hi.setAttribute("opacity", "0"); return; }
+  let cvb, zvb, html;
+  if (best.type === "v"){
+    cvb = sx(best.c); zvb = sy(best.z);
+    html = `Ch ${best.c.toFixed(1)} m<br><span class="sub">RL ${best.z.toFixed(2)}</span>`;
+  } else {
+    const cr = best.cr;
+    cvb = sx(cr.chain); zvb = cr.z != null ? sy(cr.z) : mT + 8;
+    html = `${esc(cr.name)}<br><span class="sub">Ch ${cr.chain.toFixed(1)} m · ` +
+      `RL ${cr.z != null ? cr.z.toFixed(2) : "?"}` +
+      `${cr.dz != null ? " · Δ " + Math.abs(cr.dz).toFixed(2) + " m" : ""}</span>`;
+  }
+  if (hi){ hi.setAttribute("cx", cvb.toFixed(1)); hi.setAttribute("cy", zvb.toFixed(1)); hi.setAttribute("opacity", "1"); }
+  tip.innerHTML = html;
+  tip.classList.add("show");
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let tx = clientX + 14, ty = clientY - th - 10;
+  if (tx + tw > window.innerWidth - 8) tx = clientX - tw - 14;
+  if (ty < 8) ty = clientY + 16;
+  tip.style.left = tx + "px";
+  tip.style.top = ty + "px";
+}
+function lsRenderThrottled(){
+  if (lsRaf) return;
+  lsRaf = requestAnimationFrame(() => { lsRaf = 0; lsRender(); });
+}
+function lsClientToData(cx, cy){
+  const svg = $("#lsBody svg");
+  if (!svg || !lsState) return null;
+  const r = svg.getBoundingClientRect();
+  const vx = (cx - r.left) / r.width * LS.W, vy = (cy - r.top) / r.height * LS.H;
+  const v = lsState.view;
+  return { c: v.x0 + (vx - LS.mL) / LS.pw * (v.x1 - v.x0),
+           z: v.z1 - (vy - LS.mT) / LS.ph * (v.z1 - v.z0) };
+}
+function lsZoomAt(cx, cy, factor){
+  const d = lsClientToData(cx, cy);
+  if (!d) return;
+  const v = lsState.view;
+  v.x0 = d.c - (d.c - v.x0) * factor; v.x1 = d.c + (v.x1 - d.c) * factor;
+  v.z0 = d.z - (d.z - v.z0) * factor; v.z1 = d.z + (v.z1 - d.z) * factor;
+  lsRenderThrottled();
+}
+// wheel zoom
+$("#lsBody").addEventListener("wheel", e => {
+  if (!lsState) return;
+  e.preventDefault();
+  lsZoomAt(e.clientX, e.clientY, e.deltaY > 0 ? 1.15 : 0.87);
+}, { passive: false });
+// unified pointer input: 1 pointer = pan (or hover/tap), 2 pointers = pinch zoom.
+// One event stream (Pointer Events) avoids the touch-vs-pointer conflict that made
+// mobile pinch fight with pan; pointercancel is handled so a drag can't get stuck.
+let lsDrag = null;                  // { x, y, view } pan anchor while 1 pointer down
+const lsPointers = new Map();       // pointerId -> { x, y }
+let lsPinchDist = 0, lsPinched = false;
+function lsTwoPts(){
+  const it = lsPointers.values();
+  const a = it.next().value, b = it.next().value;
+  return { dist: Math.hypot(a.x - b.x, a.y - b.y),
+           cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
+}
+$("#lsBody").addEventListener("pointerdown", e => {
+  if (!lsState) return;
+  try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
+  lsPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  $("#lsTip").classList.remove("show");
+  if (lsPointers.size === 1){
+    lsDrag = { x: e.clientX, y: e.clientY, view: { ...lsState.view } };
+  } else if (lsPointers.size === 2){
+    lsDrag = null; lsPinched = true;
+    lsPinchDist = lsTwoPts().dist;
+  }
+});
+$("#lsBody").addEventListener("pointermove", e => {
+  if (!lsState) return;
+  if (lsPointers.has(e.pointerId)) lsPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (lsPointers.size >= 2){                       // pinch
+    const t = lsTwoPts();
+    if (lsPinchDist > 0 && t.dist > 0) lsZoomAt(t.cx, t.cy, lsPinchDist / t.dist);
+    lsPinchDist = t.dist;
+    return;
+  }
+  if (lsDrag){                                      // pan
+    const svg = $("#lsBody svg");
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const dC = (e.clientX - lsDrag.x) / r.width * LS.W / LS.pw * (lsDrag.view.x1 - lsDrag.view.x0);
+    const dZ = (e.clientY - lsDrag.y) / r.height * LS.H / LS.ph * (lsDrag.view.z1 - lsDrag.view.z0);
+    const v = lsState.view;
+    v.x0 = lsDrag.view.x0 - dC; v.x1 = lsDrag.view.x1 - dC;
+    v.z0 = lsDrag.view.z0 + dZ; v.z1 = lsDrag.view.z1 + dZ;
+    lsRenderThrottled();
+  } else {
+    lsHover(e.clientX, e.clientY);                  // hover readout
+  }
+});
+function lsPointerEnd(e){
+  if (!lsPointers.has(e.pointerId)) return;
+  const start = lsDrag;
+  lsPointers.delete(e.pointerId);
+  if (lsPointers.size === 1){
+    // pinch dropped to one finger — resume pan cleanly from the survivor, no stale anchor
+    const p = lsPointers.values().next().value;
+    lsDrag = { x: p.x, y: p.y, view: { ...lsState.view } };
+    lsPinchDist = 0;
+  } else if (lsPointers.size === 0){
+    const tap = !lsPinched && start &&
+      Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6;
+    lsDrag = null; lsPinched = false; lsPinchDist = 0;
+    if (tap) lsHover(e.clientX, e.clientY);          // tap-to-inspect
+  }
+}
+$("#lsBody").addEventListener("pointerup", lsPointerEnd);
+$("#lsBody").addEventListener("pointercancel", lsPointerEnd);
+$("#lsBody").addEventListener("pointerleave", () => {
+  if (lsPointers.size) return;
+  const svg = $("#lsBody svg"), hi = svg && svg.querySelector("#lsHi");
+  if (hi) hi.setAttribute("opacity", "0");
+  $("#lsTip").classList.remove("show");
+});
+// controls — toggles, fit, close
+$("#lsCtrls").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b || !lsState) return;
+  if (b.id === "lsClose"){ $("#lsView").classList.remove("show"); return; }
+  if (b.id === "lsFit"){
+    Object.assign(lsState.view, { x0: 0, x1: lsState.total, ...lsState.fitData });
+    lsRender(); return;
+  }
+  if (b.id === "lsAll"){
+    Object.assign(lsState.view, { x0: 0, x1: lsState.total, ...lsState.fitAll });
+    lsRender(); return;
+  }
+  if (b.dataset.t){
+    lsState.show[b.dataset.t] = !lsState.show[b.dataset.t];
+    b.classList.toggle("on", lsState.show[b.dataset.t]);
+    lsRender();
+  }
+});
+// close only when tapping the dark backdrop, not the chart/controls
+$("#lsView").addEventListener("click", e => {
+  if (e.target === $("#lsView")) $("#lsView").classList.remove("show");
+});
+document.addEventListener("click", e => {
+  if (e.target.classList && e.target.classList.contains("pop-photo") && e.target.src){
+    const pin = state.pins.find(p => p.id === +e.target.dataset.pid);
+    openViewer(e.target.src, pin && pin.note, pin && pin.ts);
+  } else if (e.target.classList && e.target.classList.contains("pop-ls")){
+    openLongsection(+e.target.dataset.fid);
+  }
+});
+
+/* ---------- job file save / load ---------- */
+async function buildJobData(){
+  const layers = state.layers.map(l => ({ name: l.name, source: l.source,
+    color: l.color, visible: l.visible, feats: l.feats }));
+  const pins = [];
+  for (const p of state.pins)
+    pins.push({ ...p, photoData: p.photo ? await photoGet(p.id) : null });
+  return { app: "field-site-map", v: 2, project: PRELOADED_DATA.projectTitle,
+    savedAt: new Date().toISOString(), layers, pins, sections: state.sections };
+}
+async function saveJob(){
+  if (!state.layers.length && !state.pins.length){ toast("Nothing on the map to save"); return; }
+  const data = await buildJobData();
+  const name = new Date().toISOString().slice(0, 10) + "_" +
+    (PRELOADED_DATA.projectTitle.replace(/[^\w\-]+/g, "-") || "job") + ".json";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast("Saved " + name);
+}
+async function loadJob(text){
+  let d;
+  try { d = JSON.parse(text); } catch (e) { toast("Not a valid job file"); return; }
+  if (d.app !== "field-site-map"){ toast("Not a field-site-map job file"); return; }
+  if ((state.layers.length || state.pins.length) &&
+      !confirm("Replace everything on the map with this job file?")) return;
+  state.layers.forEach(l => map.removeLayer(l.group));
+  state.layers = [];
+  fallbackIdx = 0;
+  state.pins.forEach(p => {
+    const m = pinMarkers.get(p.id);
+    if (m) map.removeLayer(m);
+    photoDel(p.id);
+  });
+  state.pins = [];
+  pinMarkers.clear();
+  sectionLayers.forEach(l => map.removeLayer(l));
+  sectionLayers.clear();
+  state.sections = [];
+  let bounds = null;
+  (d.layers || []).forEach(l => {
+    const b = addLayer(l.name, l.feats || [], l.source || "job file",
+      { color: l.color, visible: l.visible, origin: "import" });
+    bounds = bounds ? bounds.extend(b) : b;
+  });
+  for (const p of (d.pins || [])){
+    const np = { id: p.id || Date.now(), lat: p.lat, lng: p.lng,
+      note: p.note || "Pin", ts: p.ts || "", photo: !!p.photoData };
+    if (p.photoData){
+      try { await photoPut(np.id, p.photoData); } catch (e) { np.photo = false; }
+    }
+    state.pins.push(np);
+    drawPin(np);
+  }
+  (d.sections || []).forEach(s => { state.sections.push(s); drawSection(s); });
+  persistPins();
+  persistSections();
+  renderNotes();
+  renderSections();
+  if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+  else if (state.pins.length)
+    map.flyTo([state.pins[0].lat, state.pins[0].lng], Math.max(map.getZoom(), 16));
+  toast("Job loaded: " + (d.project || "unnamed"));
+}
+$("#btnSaveJob").addEventListener("click", saveJob);
+$("#btnLoadJob").addEventListener("click", () => $("#jobInput").click());
+$("#jobInput").addEventListener("change", e => {
+  if (e.target.files.length){
+    const r = new FileReader();
+    r.onload = () => loadJob(r.result);
+    r.readAsText(e.target.files[0]);
+  }
+  e.target.value = "";
+});
+
+/* ---------- export zip (CSV with NZTM coords + KML + photos + job backup) ---------- */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++){
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8){
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(files){ // stored (no compression) — fine for JPEGs and small text
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1)) & 0xFFFF;
+  const dosDate = (((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate()) & 0xFFFF;
+  for (const f of files){
+    const name = enc.encode(f.name);
+    const crc = crc32(f.data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0x0800, true);
+    lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true);
+    lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, f.data.length, true);
+    lh.setUint32(22, f.data.length, true);
+    lh.setUint16(26, name.length, true);
+    lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true);
+    ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, dosTime, true);
+    ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, crc, true);
+    ch.setUint32(20, f.data.length, true);
+    ch.setUint32(24, f.data.length, true);
+    ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + f.data.length;
+  }
+  const centralSize = central.reduce((a, p) => a + p.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true);
+  end.setUint16(10, files.length, true);
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
+}
+async function exportZip(){
+  if (!state.pins.length && !state.sections.length){
+    toast("Nothing to export — drop some pins or save a section first");
+    return;
+  }
+  const enc = new TextEncoder();
+  const files = [];
+  const NZTM = PROJECTIONS[0];
+  const csvQ = s => '"' + String(s).replace(/"/g, '""') + '"';
+  // pins.csv — NZTM2000 coords so it drops straight into 12d
+  let csv = "﻿note,lat,lon,nztm_e,nztm_n,time,photo\r\n";
+  for (const p of state.pins){
+    const [E, N] = tmForward(p.lat, p.lng, NZTM);
+    const photoName = p.photo ? `photos/pin-${p.id}.jpg` : "";
+    csv += `${csvQ(p.note)},${p.lat.toFixed(8)},${p.lng.toFixed(8)},${E.toFixed(2)},${N.toFixed(2)},${p.ts},${photoName}\r\n`;
+    if (p.photo){
+      const du = await photoGet(p.id);
+      if (du){
+        const bin = atob(du.split(",")[1]);
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        files.push({ name: `photos/pin-${p.id}.jpg`, data: u8 });
+      }
+    }
+  }
+  files.unshift({ name: "pins.csv", data: enc.encode(csv) });
+  if (state.sections.length){
+    let sc = "﻿section,point,lat,lon,nztm_e,nztm_n,length_m\r\n";
+    state.sections.forEach(s => s.latlngs.forEach((ll, i) => {
+      const [E, N] = tmForward(ll[0], ll[1], NZTM);
+      sc += `${csvQ(s.name)},${i + 1},${ll[0].toFixed(8)},${ll[1].toFixed(8)},${E.toFixed(2)},${N.toFixed(2)},${s.dist.toFixed(1)}\r\n`;
+    }));
+    files.push({ name: "sections.csv", data: enc.encode(sc) });
+  }
+  // KML — opens in Google Earth or re-imports into this app
+  let kml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>' +
+    esc(PRELOADED_DATA.projectTitle) + ' export</name><Folder><name>Pins</name>';
+  state.pins.forEach(p => {
+    kml += `<Placemark><name>${esc(p.note)}</name><description>${esc(p.ts)}</description>` +
+      `<Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>`;
+  });
+  kml += "</Folder><Folder><name>Sections</name>";
+  state.sections.forEach(s => {
+    kml += `<Placemark><name>${esc(s.name)} (${fmtDist(s.dist)})</name><LineString><coordinates>` +
+      s.latlngs.map(ll => `${ll[1]},${ll[0]},0`).join(" ") +
+      "</coordinates></LineString></Placemark>";
+  });
+  kml += "</Folder></Document></kml>";
+  files.push({ name: "pins-and-sections.kml", data: enc.encode(kml) });
+  files.push({ name: "job.json", data: enc.encode(JSON.stringify(await buildJobData())) });
+  const name = new Date().toISOString().slice(0, 10) + "_" +
+    (PRELOADED_DATA.projectTitle.replace(/[^\w\-]+/g, "-") || "job") + "_export.zip";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(makeZip(files));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast("Exported " + name);
+}
+$("#btnExport").addEventListener("click", exportZip);
+
+/* ---------- GPS locate ---------- */
+function gpsErrText(code){
+  if (!window.isSecureContext)
+    return "Live GPS is blocked: the browser only allows location on an https page. Opened straight off the phone (content:// / file://) it can't get a fix even with location on. Use Photo pin (camera photo) instead, or open the app from an https link.";
+  if (code === 1) return "Location permission denied — allow location for this page in browser settings, and turn ON precise location.";
+  if (code === 3) return "GPS timeout — no satellite lock yet. Move to open sky and retry.";
+  return "GPS position unavailable — check device location is on.";
+}
+const locIcon = L.divIcon({ className: "", iconSize: [16, 16], iconAnchor: [8, 8],
+  html: '<div class="loc-dot"></div>' });
+let locOn = false, locMarker = null, locCircle = null, locFirst = true, lastFix = null;
+$("#btnLocate").addEventListener("click", () => {
+  if (locOn){
+    map.stopLocate();
+    if (locMarker) map.removeLayer(locMarker);
+    if (locCircle) map.removeLayer(locCircle);
+    locMarker = locCircle = null;
+    locOn = false;
+    $("#btnLocate").classList.remove("on");
+    $("#gpsChip").hidden = true;
+    toast("GPS off");
+    return;
+  }
+  // secure-context wall: bail before locate so the user gets the real reason, not a silent deny
+  if (!window.isSecureContext){
+    toast(gpsErrText(1), 7000);
+    const chip = $("#gpsChip");
+    chip.hidden = false; chip.textContent = "GPS needs https"; chip.className = "bad";
+    return;
+  }
+  locOn = true; locFirst = true;
+  $("#btnLocate").classList.add("on");
+  const chip = $("#gpsChip");
+  chip.hidden = false;
+  chip.textContent = "GPS —";
+  chip.className = "";
+  toast("Locating…");
+  map.locate({ watch: true, enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+});
+map.on("locationfound", e => {
+  lastFix = e.latlng;
+  if (!locOn) return;
+  const accTxt = "±" + (e.accuracy < 10 ? e.accuracy.toFixed(1) : Math.round(e.accuracy)) + " m";
+  const chip = $("#gpsChip");
+  chip.hidden = false;
+  chip.textContent = "GPS " + accTxt;
+  chip.className = e.accuracy <= 10 ? "ok" : e.accuracy <= 25 ? "mid" : "bad";
+  if (!locMarker){
+    locMarker = L.marker(e.latlng, { icon: locIcon, zIndexOffset: 1100 }).addTo(map)
+      .bindTooltip(accTxt, { direction: "top", offset: [0, -12], className: "loc-tip" });
+    locCircle = L.circle(e.latlng, { radius: e.accuracy, color: "#3b82f6", weight: 1,
+      fillColor: "#3b82f6", fillOpacity: 0.12, interactive: false }).addTo(map);
+  } else {
+    locMarker.setLatLng(e.latlng).setTooltipContent(accTxt);
+    locCircle.setLatLng(e.latlng).setRadius(e.accuracy);
+  }
+  if (locFirst){
+    locFirst = false;
+    map.flyTo(e.latlng, Math.max(map.getZoom(), 18), { duration: 1 });
+    toast("GPS fix " + accTxt);
+  }
+});
+map.on("locationerror", e => {
+  toast(gpsErrText(e.code), 6500);
+  locOn = false;
+  $("#btnLocate").classList.remove("on");
+  const chip = $("#gpsChip");
+  chip.hidden = false;
+  chip.textContent = "GPS blocked";
+  chip.className = "bad";
+});
+
+/* ---------- boot ---------- */
+document.title = PRELOADED_DATA.projectTitle;
+$("#projTitle").textContent = PRELOADED_DATA.projectTitle;
+try {
+  (JSON.parse(localStorage.getItem(LSKEY)) || []).forEach(p => {
+    state.pins.push(p);
+    drawPin(p);
+  });
+} catch (e) {}
+renderNotes();
+try {
+  (JSON.parse(localStorage.getItem(SECKEY)) || []).forEach(s => {
+    state.sections.push(s);
+    drawSection(s);
+  });
+} catch (e) {}
+renderSections();
+restoreLayers().finally(() =>
+  PRELOADED_DATA.kml.forEach(entry => importKML(entry.kml, entry.name, "preload")));
+// flag the secure-context GPS limitation on open, not only after a failed locate
+if (!window.isSecureContext){
+  const chip = $("#gpsChip");
+  chip.hidden = false; chip.textContent = "GPS needs https"; chip.className = "bad";
+  setTimeout(() => toast("Opened as a local file — live GPS won't work here. Use Photo pin (camera photo), or open from an https link. Everything else works offline.", 7000), 900);
+}
+</script>
+</body>
+</html>
