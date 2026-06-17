@@ -60,30 +60,32 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .pop-ls{margin-top:9px;background:var(--bg3);color:var(--accent);border:1px solid var(--accent);
   border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
 
-/* longsection viewer */
-#lsView{position:fixed;inset:0;z-index:1400;background:rgba(5,7,9,.95);display:none;
-  flex-direction:column;align-items:center;justify-content:center;padding:14px}
-#lsView.show{display:flex}
-#lsPanel{width:100%;max-width:980px;display:flex;flex-direction:column;align-items:center}
-#lsHead{color:var(--txt);font-size:16px;font-weight:800;margin-bottom:3px;text-align:center}
-#lsSub{color:var(--dim);font-size:12.5px;margin-bottom:10px;text-align:center}
-#lsCtrls{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-bottom:10px}
+/* longsection — bottom sheet so the map stays visible above */
+#lsView{position:fixed;left:0;right:0;bottom:0;z-index:1400;height:62vh;
+  display:none;flex-direction:column;background:var(--bg2);
+  border-top:1px solid var(--line);border-radius:14px 14px 0 0;
+  padding-bottom:var(--safe);box-shadow:0 -12px 32px rgba(0,0,0,.55);
+  transform:translateY(100%);transition:transform .26s cubic-bezier(.3,.8,.3,1)}
+#lsView.show{display:flex;transform:none}
+#lsHeadRow{display:flex;align-items:flex-start;justify-content:space-between;
+  gap:10px;padding:10px 14px 4px}
+#lsHead{color:var(--txt);font-size:15px;font-weight:800;line-height:1.2}
+#lsSub{color:var(--dim);font-size:11.5px;margin-top:2px}
+#lsClose{flex:0 0 auto;background:var(--bg3);border:1px solid #7f1d1d;color:#fda4af;
+  border-radius:8px;width:40px;height:40px;font-size:17px;cursor:pointer}
+#lsReadout{margin:2px 14px 6px;padding:8px 12px;background:var(--bg);
+  border:1px solid var(--line);border-radius:8px;color:var(--accent);font-size:14px;
+  font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+#lsReadout .dim{color:var(--dim);font-weight:400}
+#lsCtrls{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}
 #lsCtrls button{background:var(--bg3);border:1px solid var(--line);color:var(--dim);
-  border-radius:7px;padding:8px 13px;font:600 12px/1 inherit;cursor:pointer}
+  border-radius:7px;padding:8px 12px;font:600 12px/1 inherit;cursor:pointer}
 #lsCtrls button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-#lsCtrls #lsClose{color:#fda4af;border-color:#7f1d1d}
-.lsgap{width:8px}
-#lsBody{width:100%;touch-action:none}
-#lsBody svg{display:block;width:100%;height:auto;background:var(--bg2);
+#lsBody{flex:1;min-height:0;width:100%;touch-action:none}
+#lsBody svg{display:block;width:100%;height:100%;background:var(--bg);
   border:1px solid var(--line);border-radius:10px;cursor:grab;touch-action:none}
 #lsBody svg:active{cursor:grabbing}
-#lsHint{color:var(--dim);font-size:11.5px;margin-top:11px;text-align:center}
-#lsTip{position:fixed;z-index:1450;pointer-events:none;display:none;white-space:nowrap;
-  background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:5px 9px;
-  font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  color:var(--txt);box-shadow:0 4px 14px rgba(0,0,0,.55)}
-#lsTip.show{display:block}
-#lsTip .sub{color:var(--dim);font-weight:400}
 
 /* measure tooltip */
 .meas-tip{background:var(--bg2);color:var(--accent);border:1px solid var(--accent);
@@ -267,24 +269,22 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
 <div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
 <div id="lsView">
-  <div id="lsPanel">
-    <div id="lsHead"></div>
-    <div id="lsSub"></div>
-    <div id="lsCtrls">
-      <button data-t="rl">RL labels</button>
-      <button data-t="grade">Grades</button>
-      <button data-t="pts">Points</button>
-      <button data-t="cross">Crossings</button>
-      <span class="lsgap"></span>
-      <button id="lsFit">Fit data</button>
-      <button id="lsAll">Fit all</button>
-      <button id="lsClose">Close</button>
-    </div>
-    <div id="lsBody"></div>
-    <div id="lsHint">hover / tap a point for chainage + RL · scroll / pinch to zoom · drag to pan</div>
+  <div id="lsHeadRow">
+    <div><div id="lsHead"></div><div id="lsSub"></div></div>
+    <button id="lsClose" aria-label="Close longsection">&#10005;</button>
   </div>
+  <div id="lsReadout"></div>
+  <div id="lsCtrls">
+    <button data-t="rl">RL labels</button>
+    <button data-t="grade">Grades</button>
+    <button data-t="pts">Points</button>
+    <button data-t="cross">Crossings</button>
+    <button id="lsFont">Font A+</button>
+    <button id="lsFit">Fit data</button>
+    <button id="lsAll">Fit all</button>
+  </div>
+  <div id="lsBody"></div>
 </div>
-<div id="lsTip"></div>
 <div id="fatal"><div><b style="color:#e8eaed">Map library failed to load.</b><br><br>This file needs internet access the first time it loads Leaflet from the CDN. Check your connection and reload.</div></div>
 
 <!-- ============ Layers panel ============ -->
@@ -1304,10 +1304,18 @@ $("#photoViewer").addEventListener("click", () =>
   $("#photoViewer").classList.remove("show"));
 
 /* ---------- longsection profile (zoom / pan / layer toggles) ---------- */
-const LS = { W: 920, H: 380, mL: 64, mR: 24, mT: 22, mB: 52 };
-LS.pw = LS.W - LS.mL - LS.mR;
-LS.ph = LS.H - LS.mT - LS.mB;
-let lsState = null, lsRaf = 0;
+let lsState = null, lsRaf = 0, lsFontScale = 1, lsMapHi = null;
+// chart geometry derived from the live #lsBody pixel size so 1 SVG unit = 1 screen px.
+// (a fixed 920-wide viewBox shrank everything to ~40% on a phone — the "hard to read".)
+function lsGeom(){
+  const b = $("#lsBody");
+  const W = Math.max(300, b.clientWidth);
+  const H = Math.max(160, b.clientHeight);
+  const fs = lsFontScale;
+  const mL = Math.round(30 + 14 * fs);   // left margin holds the RL axis labels
+  const mB = Math.round(22 + 16 * fs);   // bottom margin holds the chainage labels
+  return { W, H, mL, mR: 14, mT: 12, mB, pw: W - mL - 14, ph: H - 12 - mB, fs };
+}
 
 function gradeText(dx, dz){
   if (Math.abs(dz) < 0.005) return "level";
@@ -1315,20 +1323,20 @@ function gradeText(dx, dz){
   return (dz < 0 ? "↓" : "↑") + " 1 in " + Math.round(dx / Math.abs(dz));
 }
 // CAD-style vertical dimension leader between two levels at chainage-x, value in metres
-function dimLeader(x, ya, yb, label, color){
+function dimLeader(x, ya, yb, label, color, fs){
   const top = Math.min(ya, yb), bot = Math.max(ya, yb), gap = bot - top;
-  const xd = x + 12, ah = 4, f = n => n.toFixed(1);
+  const xd = x + 12, ah = 4 * fs, aw = 3 * fs, f = n => n.toFixed(1);
   let s = "";
   // witness (extension) lines from each measured level out to the dimension line
   s += `<line x1="${f(x)}" y1="${f(top)}" x2="${f(xd + 4)}" y2="${f(top)}" stroke="${color}" stroke-width="0.8" opacity="0.7"/>`;
   s += `<line x1="${f(x)}" y1="${f(bot)}" x2="${f(xd + 4)}" y2="${f(bot)}" stroke="${color}" stroke-width="0.8" opacity="0.7"/>`;
   // dimension line + arrowhead terminators (apex at each extent)
   s += `<line x1="${f(xd)}" y1="${f(top)}" x2="${f(xd)}" y2="${f(bot)}" stroke="${color}" stroke-width="1"/>`;
-  s += `<path d="M${f(xd)},${f(top)} l-3,${ah} l6,0 z" fill="${color}"/>`;
-  s += `<path d="M${f(xd)},${f(bot)} l-3,${-ah} l6,0 z" fill="${color}"/>`;
+  s += `<path d="M${f(xd)},${f(top)} l${-aw},${f(ah)} l${f(aw*2)},0 z" fill="${color}"/>`;
+  s += `<path d="M${f(xd)},${f(bot)} l${-aw},${f(-ah)} l${f(aw*2)},0 z" fill="${color}"/>`;
   // value text — beside the midpoint, or above when the gap is too small to fit
-  const ty = gap >= 16 ? (top + bot) / 2 + 3.5 : top - 5;
-  s += `<text x="${f(xd + 7)}" y="${f(ty)}" fill="${color}" font-size="10.5" font-weight="600" text-anchor="start">${label}</text>`;
+  const ty = gap >= 16 ? (top + bot) / 2 + 3.5 * fs : top - 5;
+  s += `<text x="${f(xd + 7)}" y="${f(ty)}" fill="${color}" font-size="${(10.5*fs).toFixed(1)}" font-weight="600" text-anchor="start">${label}</text>`;
   return s;
 }
 function percentile(sorted, p){
@@ -1434,15 +1442,19 @@ function openLongsection(fid){
     (crossings.some(c => c.dz != null) ? `  ·  Δ = ${CROSSING_DATUM}` : "");
   document.querySelectorAll("#lsCtrls [data-t]").forEach(b =>
     b.classList.toggle("on", lsState.show[b.dataset.t]));
-  lsRender();
+  $("#lsFont").textContent = LS_FONT_LABELS[LS_FONTS.indexOf(lsFontScale)] || "Font A+";
+  $("#lsReadout").innerHTML = '<span class="dim">Tap a point for chainage + RL</span>';
+  lsClearMapHi();
   $("#lsView").classList.add("show");
+  // wait for the sheet to lay out so lsGeom() measures the real pixel size
+  requestAnimationFrame(() => requestAnimationFrame(lsRender));
 }
 function lsRender(){
   if (!lsState) return;
-  const tipEl = document.getElementById("lsTip");
-  if (tipEl) tipEl.classList.remove("show"); // any re-render (zoom/pan/toggle) drops the tooltip
+  const g = lsGeom(); lsState.g = g;
+  const { W, H, mL, mR, mT, mB, pw, ph, fs } = g;
+  const F = v => (v * fs).toFixed(1);
   const { ch, zs, view, show, rec } = lsState;
-  const { W, H, mL, mR, mT, mB, pw, ph } = LS;
   const { x0, x1, z0, z1 } = view;
   const sx = c => mL + (c - x0) / (x1 - x0) * pw;
   const sy = z => mT + (z1 - z) / (z1 - z0) * ph;
@@ -1456,7 +1468,7 @@ function lsRender(){
   for (let z = Math.ceil(z0 / zstep) * zstep; z <= z1; z += zstep){
     const y = sy(z).toFixed(1);
     grid += `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="#262d35"/>` +
-      `<text x="${mL - 8}" y="${(+y + 4).toFixed(1)}" fill="#8c96a3" font-size="11" text-anchor="end">${z.toFixed(zdp)}</text>`;
+      `<text x="${mL - 6}" y="${(+y + 4 * fs).toFixed(1)}" fill="#8c96a3" font-size="${F(11)}" text-anchor="end">${z.toFixed(zdp)}</text>`;
   }
   const xspan = x1 - x0;
   const xstep = xspan > 400 ? 100 : xspan > 150 ? 50 : xspan > 60 ? 20 : xspan > 25 ? 10 : xspan > 8 ? 5 : 2;
@@ -1464,36 +1476,37 @@ function lsRender(){
   for (let c = Math.ceil(x0 / xstep) * xstep; c <= x1; c += xstep){
     const x = sx(c).toFixed(1);
     xticks += `<line x1="${x}" y1="${mT}" x2="${x}" y2="${mT + ph}" stroke="#1c2127"/>` +
-      `<text x="${x}" y="${H - mB + 18}" fill="#8c96a3" font-size="11" text-anchor="middle">${Math.round(c)}</text>`;
+      `<text x="${x}" y="${(mT + ph + 16 * fs).toFixed(1)}" fill="#8c96a3" font-size="${F(11)}" text-anchor="middle">${Math.round(c)}</text>`;
   }
   const pts = ch.map((c, i) => `${sx(c).toFixed(1)},${sy(zs[i]).toFixed(1)}`).join(" ");
   // dots + RL labels, thinned by horizontal spacing so they declutter as you zoom
   let dots = "", rllab = "", lastDot = -1e9, lastRL = -1e9;
+  const rlGap = 40 * fs, dotR = (2.6 * fs).toFixed(1);
   for (let i = 0; i < ch.length; i++){
     if (!inX(ch[i]) || !inZ(zs[i])) continue;
     const x = sx(ch[i]), y = sy(zs[i]);
-    if (show.pts && x - lastDot >= 5){
-      dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${THEME.accent}" stroke="#0c0f12"/>`;
+    if (show.pts && x - lastDot >= 6){
+      dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${dotR}" fill="${THEME.accent}" stroke="#0c0f12"/>`;
       lastDot = x;
     }
-    if (show.rl && x - lastRL >= 42){
-      rllab += `<text x="${x.toFixed(1)}" y="${(y - 9).toFixed(1)}" fill="#e8eaed" font-size="10.5" text-anchor="middle">${zs[i].toFixed(2)}</text>`;
+    if (show.rl && x - lastRL >= rlGap){
+      rllab += `<text x="${x.toFixed(1)}" y="${(y - 9 * fs).toFixed(1)}" fill="#e8eaed" font-size="${F(10.5)}" text-anchor="middle">${zs[i].toFixed(2)}</text>`;
       lastRL = x;
     }
   }
-  let grades = "", lastG = -1e9;
+  let grades = "", lastG = -1e9; const gGap = 60 * fs;
   if (show.grade){
     for (let i = 1; i < ch.length; i++){
       if (!inZ(zs[i - 1]) || !inZ(zs[i])) continue;
       const xm = (sx(ch[i - 1]) + sx(ch[i])) / 2;
-      if (xm < mL || xm > W - mR || xm - lastG < 62) continue;
-      const ym = (sy(zs[i - 1]) + sy(zs[i])) / 2 + 15;
-      grades += `<text x="${xm.toFixed(1)}" y="${ym.toFixed(1)}" fill="${THEME.accent}" font-size="10.5" text-anchor="middle">${gradeText(ch[i] - ch[i - 1], zs[i] - zs[i - 1])}</text>`;
+      if (xm < mL || xm > W - mR || xm - lastG < gGap) continue;
+      const ym = (sy(zs[i - 1]) + sy(zs[i])) / 2 + 14 * fs;
+      grades += `<text x="${xm.toFixed(1)}" y="${ym.toFixed(1)}" fill="${THEME.accent}" font-size="${F(10)}" text-anchor="middle">${gradeText(ch[i] - ch[i - 1], zs[i] - zs[i - 1])}</text>`;
       lastG = xm;
     }
   }
   // service crossings — vertical line in the crosser's colour, diamond + RL at its level if known
-  let crossLines = "", crossMarks = "", lastC = -1e9;
+  let crossLines = "", crossMarks = "", lastC = -1e9; const cGap = 30 * fs, dia = 3.6 * fs;
   if (show.cross && lsState.crossings){
     lsState.crossings.forEach(c => {
       if (!inX(c.chain)) return;
@@ -1501,54 +1514,82 @@ function lsRender(){
       crossLines += `<line x1="${x.toFixed(1)}" y1="${mT}" x2="${x.toFixed(1)}" y2="${mT + ph}" stroke="${c.color}" stroke-width="1.3" stroke-dasharray="4 4" opacity="0.8"/>`;
       if (c.z != null && inZ(c.z)){
         const y = sy(c.z);
-        crossMarks += `<rect x="${(x - 3.6).toFixed(1)}" y="${(y - 3.6).toFixed(1)}" width="7.2" height="7.2" transform="rotate(45 ${x.toFixed(1)} ${y.toFixed(1)})" fill="${c.color}" stroke="#0c0f12"/>`;
-        if (x - lastC >= 30){
-          crossMarks += `<text x="${x.toFixed(1)}" y="${(y + 17).toFixed(1)}" fill="${c.color}" font-size="10" text-anchor="middle">${c.z.toFixed(2)}</text>`;
+        crossMarks += `<rect x="${(x - dia).toFixed(1)}" y="${(y - dia).toFixed(1)}" width="${(dia * 2).toFixed(1)}" height="${(dia * 2).toFixed(1)}" transform="rotate(45 ${x.toFixed(1)} ${y.toFixed(1)})" fill="${c.color}" stroke="#0c0f12"/>`;
+        if (x - lastC >= cGap){
+          crossMarks += `<text x="${x.toFixed(1)}" y="${(y + 17 * fs).toFixed(1)}" fill="${c.color}" font-size="${F(10)}" text-anchor="middle">${c.z.toFixed(2)}</text>`;
           lastC = x;
         }
         // RL difference shown as a dimension leader between the two pipe levels
         if (c.dz != null && Number.isFinite(c.pz) && inZ(c.pz)){
-          crossMarks += dimLeader(x, sy(c.pz), sy(c.z), `${Math.abs(c.dz).toFixed(2)} m`, c.color);
+          crossMarks += dimLeader(x, sy(c.pz), sy(c.z), `${Math.abs(c.dz).toFixed(2)} m`, c.color, fs);
         }
       } else if (c.z != null){
         // level known but off the current RL window — flag it at the edge with direction
         const top = c.z > z1;
-        crossMarks += `<text x="${x.toFixed(1)}" y="${top ? (mT + 11).toFixed(1) : (mT + ph - 4).toFixed(1)}" fill="${c.color}" font-size="9.5" text-anchor="middle">${top ? "▲" : "▼"} ${c.z.toFixed(2)}</text>`;
+        crossMarks += `<text x="${x.toFixed(1)}" y="${top ? (mT + 11 * fs).toFixed(1) : (mT + ph - 4).toFixed(1)}" fill="${c.color}" font-size="${F(9.5)}" text-anchor="middle">${top ? "▲" : "▼"} ${c.z.toFixed(2)}</text>`;
       } else {
-        crossMarks += `<text x="${x.toFixed(1)}" y="${(mT + 11).toFixed(1)}" fill="${c.color}" font-size="9" text-anchor="middle">RL?</text>`;
+        crossMarks += `<text x="${x.toFixed(1)}" y="${(mT + 11 * fs).toFixed(1)}" fill="${c.color}" font-size="${F(9)}" text-anchor="middle">RL?</text>`;
       }
     });
   }
+  const lblX = (11 * fs).toFixed(1), lblY = (mT + ph / 2).toFixed(1);
   $("#lsBody").innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">` +
     `<defs><clipPath id="lsclip"><rect x="${mL}" y="${mT}" width="${pw}" height="${ph}"/></clipPath></defs>` +
     grid + xticks + crossLines +
-    `<g clip-path="url(#lsclip)"><polyline points="${pts}" fill="none" stroke="${rec.color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}</g>` +
+    `<g clip-path="url(#lsclip)"><polyline points="${pts}" fill="none" stroke="${rec.color}" stroke-width="${(2.5 * Math.max(1, fs * 0.9)).toFixed(1)}" stroke-linejoin="round"/>${dots}</g>` +
     crossMarks + rllab + grades +
-    `<text x="${mL + pw / 2}" y="${H - 6}" fill="#8c96a3" font-size="11" text-anchor="middle">Chainage (m)</text>` +
-    `<text x="16" y="${mT + ph / 2}" fill="#8c96a3" font-size="11" text-anchor="middle" transform="rotate(-90 16 ${mT + ph / 2})">RL (m)</text>` +
-    `<circle id="lsHi" r="7" fill="none" stroke="#fff" stroke-width="1.6" opacity="0"/>` +
+    `<text x="${(mL + pw / 2).toFixed(1)}" y="${(H - 4).toFixed(1)}" fill="#8c96a3" font-size="${F(11)}" text-anchor="middle">Chainage (m)</text>` +
+    `<text x="${lblX}" y="${lblY}" fill="#8c96a3" font-size="${F(11)}" text-anchor="middle" transform="rotate(-90 ${lblX} ${lblY})">RL (m)</text>` +
+    `<circle id="lsHi" r="${(8 * fs).toFixed(1)}" fill="none" stroke="#fff" stroke-width="2" opacity="0"/>` +
     `</svg>`;
 }
+// interpolate the profiled line's lat/lng at an arbitrary chainage (for the map locator)
+function llAtChain(chain){
+  const ch = lsState.ch, ll = lsState.rec.f.latlngs;
+  if (chain <= ch[0]) return L.latLng(ll[0][0], ll[0][1]);
+  for (let i = 1; i < ch.length; i++)
+    if (chain <= ch[i]){
+      const t = (chain - ch[i - 1]) / ((ch[i] - ch[i - 1]) || 1);
+      return L.latLng(ll[i - 1][0] + t * (ll[i][0] - ll[i - 1][0]),
+                      ll[i - 1][1] + t * (ll[i][1] - ll[i - 1][1]));
+    }
+  const n = ll.length - 1;
+  return L.latLng(ll[n][0], ll[n][1]);
+}
+// drop/move a ring on the map at the selected longsection point, nudged into the
+// visible strip above the bottom sheet so you can see where on site the point is
+function lsHighlightOnMap(latlng){
+  if (!latlng) return;
+  if (!lsMapHi)
+    lsMapHi = L.circleMarker(latlng, { radius: 8, color: "#fff", weight: 3,
+      fillColor: THEME.accent, fillOpacity: 0.9, interactive: false }).addTo(map);
+  else lsMapHi.setLatLng(latlng);
+  const sheet = Math.round(window.innerHeight * 0.62);
+  try { map.panInside(latlng, { paddingTopLeft: [28, 64], paddingBottomRight: [28, sheet] }); }
+  catch (e) {}
+}
+function lsClearMapHi(){ if (lsMapHi){ map.removeLayer(lsMapHi); lsMapHi = null; } }
+
 // hover/tap readout — nearest vertex or crossing under the pointer
 function lsHover(clientX, clientY){
-  if (!lsState || lsDrag || lsPointers.size >= 2) return;
+  if (!lsState || lsDrag || lsPointers.size >= 2 || !lsState.g) return;
   const svg = $("#lsBody svg");
   if (!svg) return;
   const r = svg.getBoundingClientRect();
-  const { W, H, mL, mT, pw, ph } = LS;
+  const g = lsState.g;
   const { x0, x1, z0, z1 } = lsState.view;
-  const sx = c => mL + (c - x0) / (x1 - x0) * pw;
-  const sy = z => mT + (z1 - z) / (z1 - z0) * ph;
+  const sx = c => g.mL + (c - x0) / (x1 - x0) * g.pw;
+  const sy = z => g.mT + (z1 - z) / (z1 - z0) * g.ph;
   const toClient = (c, z) => ({
-    x: r.left + sx(c) / W * r.width,
-    y: r.top + sy(z) / H * r.height });
-  let best = null, bestD = 16;
+    x: r.left + sx(c) / g.W * r.width,
+    y: r.top + sy(z) / g.H * r.height });
+  let best = null, bestD = 22;
   for (let i = 0; i < lsState.ch.length; i++){
     const c = lsState.ch[i], z = lsState.zs[i];
     if (c < x0 || c > x1 || z < z0 || z > z1) continue;
     const p = toClient(c, z), d = Math.hypot(p.x - clientX, p.y - clientY);
-    if (d < bestD){ bestD = d; best = { type: "v", c, z }; }
+    if (d < bestD){ bestD = d; best = { type: "v", c, z, i }; }
   }
   lsState.crossings.forEach(cr => {
     if (cr.chain < x0 || cr.chain > x1) return;
@@ -1556,28 +1597,25 @@ function lsHover(clientX, clientY){
     const d = Math.hypot(p.x - clientX, p.y - clientY);
     if (d < bestD){ bestD = d; best = { type: "x", cr }; }
   });
-  const tip = $("#lsTip"), hi = svg.querySelector("#lsHi");
-  if (!best){ tip.classList.remove("show"); if (hi) hi.setAttribute("opacity", "0"); return; }
-  let cvb, zvb, html;
+  const hi = svg.querySelector("#lsHi");
+  if (!best){ if (hi) hi.setAttribute("opacity", "0"); return; }
+  let cvb, zvb, html, latlng;
   if (best.type === "v"){
     cvb = sx(best.c); zvb = sy(best.z);
-    html = `Ch ${best.c.toFixed(1)} m<br><span class="sub">RL ${best.z.toFixed(2)}</span>`;
+    html = `Ch ${best.c.toFixed(1)} m <span class="dim">·</span> RL ${best.z.toFixed(2)}`;
+    const ll = lsState.rec.f.latlngs[best.i];
+    latlng = ll && L.latLng(ll[0], ll[1]);
   } else {
     const cr = best.cr;
-    cvb = sx(cr.chain); zvb = cr.z != null ? sy(cr.z) : mT + 8;
-    html = `${esc(cr.name)}<br><span class="sub">Ch ${cr.chain.toFixed(1)} m · ` +
-      `RL ${cr.z != null ? cr.z.toFixed(2) : "?"}` +
+    cvb = sx(cr.chain); zvb = cr.z != null ? sy(cr.z) : g.mT + 8;
+    html = `${esc(cr.name)} <span class="dim">· Ch ${cr.chain.toFixed(1)} m · RL ` +
+      `${cr.z != null ? cr.z.toFixed(2) : "?"}` +
       `${cr.dz != null ? " · Δ " + Math.abs(cr.dz).toFixed(2) + " m" : ""}</span>`;
+    latlng = llAtChain(cr.chain);
   }
   if (hi){ hi.setAttribute("cx", cvb.toFixed(1)); hi.setAttribute("cy", zvb.toFixed(1)); hi.setAttribute("opacity", "1"); }
-  tip.innerHTML = html;
-  tip.classList.add("show");
-  const tw = tip.offsetWidth, th = tip.offsetHeight;
-  let tx = clientX + 14, ty = clientY - th - 10;
-  if (tx + tw > window.innerWidth - 8) tx = clientX - tw - 14;
-  if (ty < 8) ty = clientY + 16;
-  tip.style.left = tx + "px";
-  tip.style.top = ty + "px";
+  $("#lsReadout").innerHTML = html;
+  lsHighlightOnMap(latlng);
 }
 function lsRenderThrottled(){
   if (lsRaf) return;
@@ -1585,12 +1623,13 @@ function lsRenderThrottled(){
 }
 function lsClientToData(cx, cy){
   const svg = $("#lsBody svg");
-  if (!svg || !lsState) return null;
+  if (!svg || !lsState || !lsState.g) return null;
   const r = svg.getBoundingClientRect();
-  const vx = (cx - r.left) / r.width * LS.W, vy = (cy - r.top) / r.height * LS.H;
+  const g = lsState.g;
+  const vx = (cx - r.left) / r.width * g.W, vy = (cy - r.top) / r.height * g.H;
   const v = lsState.view;
-  return { c: v.x0 + (vx - LS.mL) / LS.pw * (v.x1 - v.x0),
-           z: v.z1 - (vy - LS.mT) / LS.ph * (v.z1 - v.z0) };
+  return { c: v.x0 + (vx - g.mL) / g.pw * (v.x1 - v.x0),
+           z: v.z1 - (vy - g.mT) / g.ph * (v.z1 - v.z0) };
 }
 function lsZoomAt(cx, cy, factor){
   const d = lsClientToData(cx, cy);
@@ -1624,7 +1663,6 @@ $("#lsBody").addEventListener("pointerdown", e => {
   // zoom frame, so capturing the soon-destroyed svg drops the gesture the instant you pinch
   try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
   lsPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  $("#lsTip").classList.remove("show");
   if (lsPointers.size === 1){
     lsDrag = { x: e.clientX, y: e.clientY, view: { ...lsState.view } };
   } else if (lsPointers.size === 2){
@@ -1643,10 +1681,11 @@ $("#lsBody").addEventListener("pointermove", e => {
   }
   if (lsDrag){                                      // pan
     const svg = $("#lsBody svg");
-    if (!svg) return;
+    if (!svg || !lsState.g) return;
     const r = svg.getBoundingClientRect();
-    const dC = (e.clientX - lsDrag.x) / r.width * LS.W / LS.pw * (lsDrag.view.x1 - lsDrag.view.x0);
-    const dZ = (e.clientY - lsDrag.y) / r.height * LS.H / LS.ph * (lsDrag.view.z1 - lsDrag.view.z0);
+    const g = lsState.g;
+    const dC = (e.clientX - lsDrag.x) / r.width * g.W / g.pw * (lsDrag.view.x1 - lsDrag.view.x0);
+    const dZ = (e.clientY - lsDrag.y) / r.height * g.H / g.ph * (lsDrag.view.z1 - lsDrag.view.z0);
     const v = lsState.view;
     v.x0 = lsDrag.view.x0 - dC; v.x1 = lsDrag.view.x1 - dC;
     v.z0 = lsDrag.view.z0 + dZ; v.z1 = lsDrag.view.z1 + dZ;
@@ -1677,13 +1716,17 @@ $("#lsBody").addEventListener("pointerleave", () => {
   if (lsPointers.size) return;
   const svg = $("#lsBody svg"), hi = svg && svg.querySelector("#lsHi");
   if (hi) hi.setAttribute("opacity", "0");
-  $("#lsTip").classList.remove("show");
 });
-// controls — toggles, fit, close
+const LS_FONTS = [1, 1.3, 1.6], LS_FONT_LABELS = ["Font A", "Font A+", "Font A++"];
+// controls — layer toggles, font size, fit
 $("#lsCtrls").addEventListener("click", e => {
   const b = e.target.closest("button");
   if (!b || !lsState) return;
-  if (b.id === "lsClose"){ $("#lsView").classList.remove("show"); return; }
+  if (b.id === "lsFont"){
+    lsFontScale = LS_FONTS[(LS_FONTS.indexOf(lsFontScale) + 1) % LS_FONTS.length];
+    b.textContent = LS_FONT_LABELS[LS_FONTS.indexOf(lsFontScale)];
+    lsRender(); return;
+  }
   if (b.id === "lsFit"){
     Object.assign(lsState.view, { x0: 0, x1: lsState.total, ...lsState.fitData });
     lsRender(); return;
@@ -1698,9 +1741,13 @@ $("#lsCtrls").addEventListener("click", e => {
     lsRender();
   }
 });
-// close only when tapping the dark backdrop, not the chart/controls
-$("#lsView").addEventListener("click", e => {
-  if (e.target === $("#lsView")) $("#lsView").classList.remove("show");
+$("#lsClose").addEventListener("click", () => {
+  $("#lsView").classList.remove("show");
+  lsClearMapHi();
+});
+// re-fit the chart to the new size on rotate/resize while open
+window.addEventListener("resize", () => {
+  if (lsState && $("#lsView").classList.contains("show")) lsRenderThrottled();
 });
 document.addEventListener("click", e => {
   if (e.target.classList && e.target.classList.contains("pop-photo") && e.target.src){
