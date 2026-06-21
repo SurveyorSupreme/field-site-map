@@ -549,13 +549,15 @@ function addLayer(name, feats, source, opts = {}){
       return;
     }
     let obj;
+    const c = f.color || color;      // DXF features carry their own colour; KML falls back to the layer colour
+    const dxf = !!f.color;           // DXF linework is dense → draw it near-hairline, not 3px like service KML
     if (f.kind === "point")
-      obj = L.circleMarker(f.latlngs[0], { radius: 7, color: "#0c0f12", weight: 1.5,
-        fillColor: color, fillOpacity: 1 });
+      obj = L.circleMarker(f.latlngs[0], { radius: dxf ? 4 : 7, color: "#0c0f12", weight: 1.2,
+        fillColor: c, fillOpacity: 1 });
     else if (f.kind === "poly")
-      obj = L.polygon(f.latlngs, { color, weight: 2, fillColor: color, fillOpacity: 0.15 });
+      obj = L.polygon(f.latlngs, { color: c, weight: dxf ? 1.3 : 2, fillColor: c, fillOpacity: 0.12 });
     else
-      obj = L.polyline(f.latlngs, { color, weight: 3, opacity: 0.92 });
+      obj = L.polyline(f.latlngs, { color: c, weight: dxf ? 1.3 : 3, opacity: dxf ? 1 : 0.92 });
     // longsection available when a line carries an RL on every vertex
     const zsOK = f.kind === "line" && Array.isArray(f.zs) &&
       f.zs.length === f.latlngs.length && f.zs.every(Number.isFinite) &&
@@ -563,7 +565,7 @@ function addLayer(name, feats, source, opts = {}){
     let lsBtn = "";
     if (zsOK){
       const fid = ++featSeq;
-      featRegistry.set(fid, { f, layerName: name, color });
+      featRegistry.set(fid, { f, layerName: name, color: c });
       lsBtn = `<button class="pop-ls" data-fid="${fid}">Longsection</button>`;
     }
     obj.bindPopup(`<div class="pop"><b>${esc(f.name)}</b>` +
@@ -764,6 +766,31 @@ function detectProjection(pts){
   return null;
 }
 
+/* ---------- DXF colour: prefer true-colour (420), else ACI (62) ---------- */
+const intHex = v => "#" + ((v | 0) & 0xFFFFFF).toString(16).padStart(6, "0");
+function hsv2hex(h, s, v){
+  h = ((h % 360) + 360) % 360;
+  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60){ r = c; g = x; } else if (h < 120){ r = x; g = c; }
+  else if (h < 180){ g = c; b = x; } else if (h < 240){ g = x; b = c; }
+  else if (h < 300){ r = x; b = c; } else { r = c; b = x; }
+  const to = n => Math.round((n + m) * 255).toString(16).padStart(2, "0");
+  return "#" + to(r) + to(g) + to(b);
+}
+const ACI_BASE = { 1:"#ff0000", 2:"#ffff00", 3:"#00ff00", 4:"#00ffff",
+  5:"#0000ff", 6:"#ff00ff", 7:"#ffffff", 8:"#808080", 9:"#c0c0c0" };
+function aci2hex(i){
+  i = Math.abs(i | 0);
+  if (ACI_BASE[i]) return ACI_BASE[i];
+  if (i >= 250 && i <= 255){ const g = [51,91,132,173,214,255][i-250].toString(16).padStart(2,"0"); return "#"+g+g+g; }
+  if (i >= 10 && i <= 249){
+    const hue = ((i-10)/10 | 0) * 15, sub = (i-10) % 10;
+    return hsv2hex(hue, sub % 2 ? 0.55 : 1, [1,1,.78,.78,.62,.62,.5,.5,.38,.38][sub]);
+  }
+  return "#ffffff";
+}
+
 /* ---------- DXF import (LINE, LWPOLYLINE, classic POLYLINE, TEXT, POINT) ----------
    Handles real 12d exports: 3D POLYLINE+VERTEX+SEQEND, TEXT labels (lot numbers),
    and -999/-9999 null-level sentinels (treated as no RL). HATCH fills are skipped. */
@@ -801,6 +828,10 @@ function parseDXFEntities(text){
     if (expectName && code === 2){ section = val; expectName = false; continue; }
     if (!cur) continue;
     const n = parseFloat(val), t = cur.t;
+    if (t !== "VTX"){                                  // colour codes (not on vertices)
+      if (code === 62){ const a = parseInt(val, 10); if (a && Math.abs(a) < 256) cur.aci = Math.abs(a); }
+      else if (code === 420) cur.rgb = parseInt(val, 10);
+    }
     if (t === "LINE"){
       if (code === 8) cur.layer = val;
       else if (code === 10) cur.a[0] = n; else if (code === 20) cur.a[1] = n; else if (code === 30) cur.a[2] = NZ(n);
@@ -825,21 +856,28 @@ function parseDXFEntities(text){
     }
   }
   finalize();
+  // learn ACI→RGB from entities carrying both codes, so ACI-only entities match exactly too
+  const aciRgb = {};
+  for (const e of out) if (e.rgb != null && e.aci != null && aciRgb[e.aci] == null) aciRgb[e.aci] = e.rgb;
+  const col = e => e.rgb != null ? intHex(e.rgb)
+    : (e.aci != null && aciRgb[e.aci] != null) ? intHex(aciRgb[e.aci])
+    : e.aci != null ? aci2hex(e.aci) : null;
   return out.map(e => {
+    const color = col(e);
     if (e.t === "LINE")
-      return { layer: e.layer, kind: "line", pts: [[e.a[0], e.a[1]], [e.b[0], e.b[1]]], zs: [e.a[2], e.b[2]] };
+      return { layer: e.layer, kind: "line", color, pts: [[e.a[0], e.a[1]], [e.b[0], e.b[1]]], zs: [e.a[2], e.b[2]] };
     if (e.t === "LWP"){
       const pts = e.verts.slice(), zs = pts.map(() => e.elev);
       if (e.closed && pts.length > 2){ pts.push(pts[0].slice()); zs.push(e.elev); }
-      return { layer: e.layer, kind: "line", pts, zs };
+      return { layer: e.layer, kind: "line", color, pts, zs };
     }
     if (e.t === "POLY"){
       const pts = e.verts.map(v => [v[0], v[1]]), zs = e.verts.map(v => v[2]);
       if (e.closed && pts.length > 2){ pts.push(pts[0].slice()); zs.push(zs[0]); }
-      return { layer: e.layer, kind: "line", pts, zs };
+      return { layer: e.layer, kind: "line", color, pts, zs };
     }
-    if (e.t === "TEXT") return { layer: e.layer, kind: "text", x: e.x, y: e.y, text: cleanText(e.text), rot: e.rot };
-    if (e.t === "PT") return { layer: e.layer, kind: "point", x: e.x, y: e.y, z: e.z };
+    if (e.t === "TEXT") return { layer: e.layer, kind: "text", color, x: e.x, y: e.y, text: cleanText(e.text), rot: e.rot };
+    if (e.t === "PT") return { layer: e.layer, kind: "point", color, x: e.x, y: e.y, z: e.z };
   }).filter(e => e && (e.kind !== "line" || e.pts.length >= 2) && (e.kind !== "text" || e.text));
 }
 
@@ -866,19 +904,20 @@ function importDXF(text, srcName){
   ents.forEach(en => {
     if (en.kind === "line"){
       counters[en.layer] = (counters[en.layer] || 0) + 1; nLine++;
-      push(en.layer, { name: en.layer + " · " + counters[en.layer], kind: "line",
+      push(en.layer, { name: en.layer + " · " + counters[en.layer], kind: "line", color: en.color,
         latlngs: en.pts.map(([x, y]) => toLL(x, y)), zs: en.zs });
     } else if (en.kind === "point"){
       nPt++;
-      push(en.layer, { name: en.layer, kind: "point", latlngs: [toLL(en.x, en.y)], zs: [en.z] });
+      push(en.layer, { name: en.layer, kind: "point", color: en.color, latlngs: [toLL(en.x, en.y)], zs: [en.z] });
     } else if (en.kind === "text"){
       nText++;
-      push(en.layer, { name: en.text, kind: "text", latlngs: [toLL(en.x, en.y)], zs: [], text: en.text });
+      push(en.layer, { name: en.text, kind: "text", color: en.color, latlngs: [toLL(en.x, en.y)], zs: [], text: en.text });
     }
   });
   let bounds = null;
   groups.forEach((feats, name) => {
-    const b = addLayer(name, feats, srcName);
+    const rep = (feats.find(f => f.color) || {}).color;   // DXF colours per-entity; layer dot = first real colour
+    const b = addLayer(name, feats, srcName, rep ? { color: rep } : {});
     bounds = bounds ? bounds.extend(b) : b;
   });
   if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
