@@ -232,6 +232,18 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #photoViewer .cap{color:var(--txt);font-size:14px;font-weight:600;text-align:center}
 #photoViewer .sub{color:var(--dim);font-size:12px}
 
+/* coordinate-system picker (DXF import) */
+#crsModal{position:fixed;inset:0;z-index:1500;background:rgba(5,7,9,.8);display:none;
+  align-items:center;justify-content:center;padding:20px}
+#crsModal.show{display:flex}
+.crs-card{background:var(--bg2);border:1px solid var(--line);border-radius:14px;
+  padding:18px;max-width:430px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+.crs-card h3{margin:0 0 6px;font-size:16px;font-weight:800;color:var(--txt)}
+.crs-card p{margin:0 0 12px;font-size:12.5px;color:var(--dim);line-height:1.45}
+#crsSel{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  color:var(--txt);padding:11px;font:15px/1.2 inherit;outline:none}
+#crsSel:focus{border-color:var(--accent)}
+
 /* toast */
 #toast{position:fixed;top:calc(var(--toph) + 12px);left:50%;transform:translate(-50%,-8px);
   z-index:1200;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
@@ -273,6 +285,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <div id="gpsChip" hidden>GPS —</div>
 <div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
 <div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
+<div id="crsModal">
+  <div class="crs-card">
+    <h3>Coordinate system of this DXF</h3>
+    <p>CAD/12d grid coordinates need their projection to place them. NZ circuits all share the same origin, so pick the job's system (remembered next time).</p>
+    <select id="crsSel"></select>
+    <div class="btn-row" style="padding:14px 0 0">
+      <button class="btn accent" id="crsGo">Import</button>
+      <button class="btn" id="crsCancel">Cancel</button>
+    </div>
+  </div>
+</div>
 <div id="lsView">
   <div id="lsHeadRow">
     <div><div id="lsHead"></div><div id="lsSub"></div></div>
@@ -696,16 +719,35 @@ function importKML(text, srcName, origin = "import"){
 }
 
 /* ---------- NZ projections → WGS84 (inverse Transverse Mercator, GRS80) ----------
-   NZTM2000 plus the NZGD2000 meridional circuits in use on local jobs.
-   Add more circuits by copying a row and entering its LINZ origin values. */
+   NZTM2000 plus all 28 NZGD2000 meridional circuits (LINZ). Origins are exact integer
+   arc-seconds — snapped below, since a wrong central meridian shifts the whole overlay. */
 const GRS80 = { a: 6378137, f: 1 / 298.257222101 };
-const PROJECTIONS = [
-  { name: "NZTM2000", lat0: 0, lon0: 173, k0: 0.9996, FE: 1600000, FN: 10000000,
-    xr: [800000, 3000000], yr: [4000000, 7000000] },
-  { name: "Mount Pleasant 2000", lat0: -43.5905555555556, lon0: 172.726944444444,
-    k0: 1, FE: 400000, FN: 800000,
-    xr: [250000, 550000], yr: [650000, 950000] },
-];
+const arcsec = d => Math.round(d * 3600) / 3600;        // snap LINZ origin to exact arc-second
+const NZTM = { name: "NZTM2000", lat0: 0, lon0: 173, k0: 0.9996, FE: 1600000, FN: 10000000,
+  xr: [800000, 3000000], yr: [4000000, 7000000] };
+const NZ_CIRCUITS = [
+  ["Mount Eden 2000", -36.8797, 174.7642], ["Bay of Plenty 2000", -37.7611, 176.4661],
+  ["Poverty Bay 2000", -38.6244, 177.8856], ["Hawkes Bay 2000", -39.6508, 176.6736],
+  ["Taranaki 2000", -39.1356, 174.2278], ["Tuhirangi 2000", -39.5122, 175.6400],
+  ["Wanganui 2000", -40.2419, 175.4881], ["Wairarapa 2000", -40.9253, 175.6472],
+  ["Wellington 2000", -41.3011, 174.7764], ["Collingwood 2000", -40.7147, 172.6719],
+  ["Nelson 2000", -41.2744, 173.2992], ["Karamea 2000", -41.2897, 172.1089],
+  ["Buller 2000", -41.8106, 171.5811], ["Grey 2000", -42.3336, 171.5497],
+  ["Amuri 2000", -42.6889, 173.0100], ["Marlborough 2000", -41.5444, 173.8019],
+  ["Hokitika 2000", -42.8861, 170.9797], ["Okarito 2000", -43.1100, 170.2608],
+  ["Jacksons Bay 2000", -43.9778, 168.6061], ["Mount Pleasant 2000", -43.5906, 172.7269],
+  ["Gawler 2000", -43.7486, 171.3606], ["Timaru 2000", -44.4019, 171.0572],
+  ["Lindis Peak 2000", -44.7350, 169.4675], ["Mount Nicholas 2000", -45.1328, 168.3986],
+  ["Mount York 2000", -45.5636, 167.7386], ["Observation Point 2000", -45.8161, 170.6283],
+  ["North Taieri 2000", -45.8614, 170.2825], ["Bluff 2000", -46.6000, 168.3428],
+].map(([name, lat0, lon0]) => ({ name, lat0: arcsec(lat0), lon0: arcsec(lon0),
+  k0: 1, FE: 400000, FN: 800000 }));
+const CRS_ALL = [NZTM, ...NZ_CIRCUITS];                  // full list for the import picker
+// auto-detect: NZTM (unambiguous range) + Mount Pleasant (Canterbury best-guess; all circuits
+// share the same false origin so range can't distinguish them — the import prompt overrides)
+const PROJECTIONS = [ NZTM,
+  { ...NZ_CIRCUITS.find(c => c.name === "Mount Pleasant 2000"),
+    xr: [250000, 550000], yr: [650000, 950000] } ];
 function meridianArc(phi){ // radians → metres along meridian from equator
   const { a, f } = GRS80;
   const e2 = f * (2 - f), e4 = e2 * e2, e6 = e4 * e2;
@@ -881,21 +923,36 @@ function parseDXFEntities(text){
   }).filter(e => e && (e.kind !== "line" || e.pts.length >= 2) && (e.kind !== "text" || e.text));
 }
 
+// DXF coordinates are a projected grid — ask which one (auto / NZTM / a circuit / local / WGS84),
+// since all NZ circuits share the same false origin and can't be told apart automatically
 function importDXF(text, srcName){
   const ents = parseDXFEntities(text);
   if (!ents.length){ toast("No usable entities found in " + srcName); return; }
+  crsPrompt(choice => runImportDXF(ents, srcName, choice));
+}
+function runImportDXF(ents, srcName, choice){
   const all = [];
   ents.forEach(e => { if (e.kind === "line"){ for (const p of e.pts) all.push(p); } else all.push([e.x, e.y]); });
-  const proj = detectProjection(all);
-  let toLL;
-  if (proj) toLL = (x, y) => tmInverse(x, y, proj);
-  else {
+  let toLL, projName;
+  if (choice === "wgs84"){ toLL = (x, y) => [y, x]; projName = "WGS84 lat/lon"; }
+  else if (choice === "local"){
     let sx = 0, sy = 0;
     for (const [x, y] of all){ sx += x; sy += y; }
-    const cx = sx / all.length, cy = sy / all.length;
-    const c = map.getCenter();
+    const cx = sx / all.length, cy = sy / all.length, c = map.getCenter();
     const mLat = 111320, mLon = 111320 * Math.cos(c.lat * Math.PI / 180);
     toLL = (x, y) => [c.lat + (y - cy) / mLat, c.lng + (x - cx) / mLon];
+    projName = "local (centred on view)";
+  } else {
+    let proj = (choice === "auto") ? detectProjection(all) : CRS_ALL[choice];
+    if (proj){ toLL = (x, y) => tmInverse(x, y, proj); projName = proj.name; }
+    else {                                              // auto with no match → local fallback
+      let sx = 0, sy = 0;
+      for (const [x, y] of all){ sx += x; sy += y; }
+      const cx = sx / all.length, cy = sy / all.length, c = map.getCenter();
+      const mLat = 111320, mLon = 111320 * Math.cos(c.lat * Math.PI / 180);
+      toLL = (x, y) => [c.lat + (y - cy) / mLat, c.lng + (x - cx) / mLon];
+      projName = "local (no grid auto-detected)";
+    }
   }
   const groups = new Map();
   const counters = {};
@@ -922,8 +979,36 @@ function importDXF(text, srcName){
   });
   if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
   refreshLabels();
-  toast(`${srcName}: ${nLine} lines${nText ? " · " + nText + " labels" : ""}${nPt ? " · " + nPt + " pts" : ""} · ${proj ? proj.name : "local coords"}`, 4500);
+  toast(`${srcName}: ${nLine} lines${nText ? " · " + nText + " labels" : ""}${nPt ? " · " + nPt + " pts" : ""} · ${projName}`, 4500);
 }
+let crsCb = null;
+function crsPrompt(cb){
+  const sel = $("#crsSel");
+  if (!sel.options.length){
+    const og = (label, items) => {
+      const g = document.createElement("optgroup"); g.label = label;
+      items.forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; g.appendChild(o); });
+      sel.appendChild(g);
+    };
+    og("Recommended", [["auto", "Auto-detect (NZTM / Canterbury / local)"]]);
+    og("National grid", [["0", NZTM.name]]);
+    og("Meridional circuits", NZ_CIRCUITS.map((c, i) => [String(i + 1), c.name]));
+    og("Other", [["local", "Local — centre on current view"], ["wgs84", "Already WGS84 (lat/lon)"]]);
+  }
+  sel.value = localStorage.getItem("fsm:dxfcrs") || "auto";
+  if (!sel.value) sel.value = "auto";
+  crsCb = cb;
+  $("#crsModal").classList.add("show");
+}
+$("#crsGo").addEventListener("click", () => {
+  const v = $("#crsSel").value;
+  try { localStorage.setItem("fsm:dxfcrs", v); } catch (e) {}
+  $("#crsModal").classList.remove("show");
+  const cb = crsCb; crsCb = null;
+  if (cb) cb(v);
+});
+$("#crsCancel").addEventListener("click", () => { $("#crsModal").classList.remove("show"); crsCb = null; });
+$("#crsModal").addEventListener("click", e => { if (e.target === $("#crsModal")){ $("#crsModal").classList.remove("show"); crsCb = null; } });
 
 /* ---------- file picker + drag-drop ---------- */
 function handleFiles(fileList){
