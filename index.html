@@ -24,7 +24,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:0 10px 0 16px;background:rgba(12,15,18,.94);backdrop-filter:blur(8px);
   border-bottom:1px solid var(--line)}
-#projTitle{font-size:14px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;
+#projTitle{display:flex;align-items:center;gap:7px;cursor:pointer;max-width:64vw;
+  background:none;border:0;padding:6px 4px 6px 0;font:inherit;text-align:left}
+#projTitle:active{opacity:.65}
+#projTitle::after{content:"";flex:0 0 auto;width:0;height:0;margin-top:2px;
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid var(--dim)}
+#projName{font-size:14px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--txt)}
 #topBtns{display:flex;gap:6px}
 .icon-btn{width:44px;height:44px;border:1px solid var(--line);border-radius:8px;
@@ -244,6 +250,24 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   color:var(--txt);padding:11px;font:15px/1.2 inherit;outline:none}
 #crsSel:focus{border-color:var(--accent)}
 
+/* project switcher */
+#projModal,#loadModal{position:fixed;inset:0;z-index:1500;background:rgba(5,7,9,.8);display:none;
+  align-items:center;justify-content:center;padding:20px}
+#projModal.show,#loadModal.show{display:flex}
+.proj-list{max-height:48vh;overflow:auto;margin:0 0 14px}
+.proj-item{display:flex;align-items:center;gap:9px;padding:11px 11px;border-radius:9px;
+  border:1px solid var(--line);background:var(--bg);margin-bottom:8px;cursor:pointer}
+.proj-item:active{background:var(--bg3)}
+.proj-item.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.pi-txt{flex:1 1 auto;min-width:0}
+.pi-txt b{display:block;font-size:14px;color:var(--txt);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pi-txt small{font-size:11.5px;color:var(--dim)}
+.pi-act{flex:0 0 auto;width:32px;height:32px;border-radius:7px;border:1px solid var(--line);
+  background:var(--bg2);color:var(--dim);display:flex;align-items:center;justify-content:center;cursor:pointer}
+.pi-act:active{background:var(--line)}
+.pi-act svg{width:15px;height:15px}
+
 /* toast */
 #toast{position:fixed;top:calc(var(--toph) + 12px);left:50%;transform:translate(-50%,-8px);
   z-index:1200;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
@@ -266,7 +290,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <body>
 
 <header id="topbar">
-  <div id="projTitle">Field Site Map</div>
+  <button id="projTitle" aria-label="Switch project"><span id="projName">Field Site Map</span></button>
   <div id="topBtns">
     <button class="icon-btn" id="btnImport" aria-label="Import KML or DXF">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10m0 0 4-4m-4 4-4-4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
@@ -293,6 +317,28 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <div class="btn-row" style="padding:14px 0 0">
       <button class="btn accent" id="crsGo">Import</button>
       <button class="btn" id="crsCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+<div id="projModal">
+  <div class="crs-card">
+    <h3>Projects</h3>
+    <p>Each project is a separate job kept on this device — switch between sites (e.g. potholes at different locations). The open project autosaves; use <b>Save job file</b> to send one to someone.</p>
+    <div class="proj-list" id="projList"></div>
+    <div class="btn-row" style="padding:0">
+      <button class="btn accent" id="projNew">+ New project</button>
+      <button class="btn" id="projClose">Close</button>
+    </div>
+  </div>
+</div>
+<div id="loadModal">
+  <div class="crs-card">
+    <h3>Load job file</h3>
+    <p id="loadDesc">Add this job's pins, photos and layers to the project you have open, or bring it in as a separate project.</p>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <button class="btn accent" id="loadMerge">Merge into current project</button>
+      <button class="btn" id="loadNew">Open as a new project</button>
+      <button class="btn" id="loadCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -1168,9 +1214,7 @@ window.deleteSection = id => {
   renderSections();
   toast("Section deleted");
 };
-function persistSections(){
-  try { localStorage.setItem(SECKEY, JSON.stringify(state.sections)); } catch (e) {}
-}
+function persistSections(){ persistProject(); }
 function renderSections(){
   const box = $("#secList");
   if (!state.sections.length){ box.innerHTML = ""; return; }
@@ -1226,25 +1270,238 @@ async function kvGet(key){
     });
   } catch (e) { return null; }
 }
-/* imported layers survive a refresh; preloaded ones re-import from the file itself */
-function persistLayers(){
-  const data = state.layers.filter(l => l.origin === "import")
-    .map(l => ({ name: l.name, source: l.source, color: l.color,
-      visible: l.visible, feats: l.feats }));
-  kvPut("layers", data).catch(() => {});
+async function kvDel(key){
+  try {
+    const db = await idb();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction("kv", "readwrite");
+      tx.objectStore("kv").delete(key);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  } catch (e) {}
 }
-async function restoreLayers(){
-  const data = await kvGet("layers");
-  if (!Array.isArray(data) || !data.length) return;
+/* layers/pins/sections all autosave into the active project (see projects module);
+   these thin wrappers keep the existing call sites unchanged */
+function persistLayers(){ persistProject(); }
+
+/* =====================================================================
+   PROJECTS — a crew can hold several jobs (e.g. potholes at different
+   locations) in one app and switch between them. Each project is a
+   self-contained blob in IndexedDB; the active one autosaves on every
+   change. Photos stay in the shared `photos` store keyed by pin id.
+   The file Save/Load is the separate path for sending a job to someone.
+===================================================================== */
+const PROJ_REG = "projects", PROJ_ACTIVE = "activeProject";
+let projects = [];          // [{ id, name, savedAt, pins, layers }]
+let activeProjId = null;    // the selected project
+let loadedProjId = null;    // the project whose data is actually live in memory (guards flush)
+let persistTimer = 0;
+
+function activeName(){
+  return (projects.find(p => p.id === activeProjId) || {}).name || PRELOADED_DATA.projectTitle;
+}
+function projBlob(){
+  return {
+    name: activeName(),
+    layers: state.layers.filter(l => l.origin === "import").map(l =>
+      ({ name: l.name, source: l.source, color: l.color, visible: l.visible, feats: l.feats })),
+    pins: state.pins,
+    sections: state.sections,
+    view: { lat: map.getCenter().lat, lon: map.getCenter().lng, zoom: map.getZoom() }
+  };
+}
+function saveRegistry(){ kvPut(PROJ_REG, projects).catch(() => {}); }
+function persistProject(){                 // debounced autosave of the active project
+  if (!activeProjId) return;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    kvPut("proj:" + activeProjId, projBlob()).catch(() => {});
+    const p = projects.find(p => p.id === activeProjId);
+    if (p){
+      p.savedAt = new Date().toISOString();
+      p.pins = state.pins.length;
+      p.layers = state.layers.filter(l => l.origin === "import").length;
+      saveRegistry();
+    }
+  }, 350);
+}
+async function flushProject(){             // write the LOADED project NOW (before any switch)
+  if (!loadedProjId) return;               // nothing hydrated yet (e.g. at boot) → don't clobber
+  clearTimeout(persistTimer); persistTimer = 0;
+  const id = loadedProjId, blob = projBlob();
+  await kvPut("proj:" + id, blob).catch(() => {});
+  const p = projects.find(p => p.id === id);
+  if (p){
+    p.savedAt = new Date().toISOString();
+    p.pins = state.pins.length;
+    p.layers = state.layers.filter(l => l.origin === "import").length;
+    saveRegistry();
+  }
+}
+function clearMap(){                        // tear down everything currently on the map
+  state.layers.forEach(l => map.removeLayer(l.group));
+  state.layers = []; layerSeq = 0; fallbackIdx = 0;
+  dxfLabels.length = 0; refreshLabels();
+  state.pins.forEach(p => { const m = pinMarkers.get(p.id); if (m) map.removeLayer(m); });
+  state.pins = []; pinMarkers.clear();
+  sectionLayers.forEach(l => map.removeLayer(l)); sectionLayers.clear();
+  state.sections = [];
+  cancelPendingPin();
+}
+async function hydrate(d, inline){         // draw a job blob; inline=true → pins carry photoData
   let bounds = null;
-  data.forEach(l => {
-    const b = addLayer(l.name, l.feats || [], l.source || "saved",
+  (d.layers || []).forEach(l => {
+    const b = addLayer(l.name, l.feats || [], l.source || "job",
       { color: l.color, visible: l.visible, origin: "import" });
-    bounds = bounds ? bounds.extend(b) : b;
+    bounds = bounds ? (bounds.isValid() ? bounds.extend(b) : b) : b;
   });
-  if (!PRELOADED_DATA.kml.length && bounds && bounds.isValid())
-    map.fitBounds(bounds.pad(0.2));
-  toast(`Restored ${data.length} layer${data.length > 1 ? "s" : ""} from last session`);
+  for (const p of (d.pins || [])){
+    const np = { id: p.id || Date.now(), lat: p.lat, lng: p.lng, note: p.note || "Pin",
+      ts: p.ts || "", photo: inline ? !!p.photoData : !!p.photo };
+    if (inline && p.photoData){ try { await photoPut(np.id, p.photoData); } catch (e) { np.photo = false; } }
+    state.pins.push(np); drawPin(np);
+  }
+  (d.sections || []).forEach(s => { state.sections.push(s); drawSection(s); });
+  renderLayerList(); renderNotes(); renderSections();
+  return bounds;
+}
+function loadPreload(){                     // baked-in base layers ride along in every project
+  PRELOADED_DATA.kml.forEach(entry => importKML(entry.kml, entry.name, "preload"));
+}
+async function setActiveProject(id, opts = {}){
+  await flushProject();                     // don't lose the open project's latest edits
+  clearMap();
+  activeProjId = id;
+  await kvPut(PROJ_ACTIVE, id);
+  const d = (await kvGet("proj:" + id)) || {};
+  const bounds = await hydrate(d, false);
+  loadPreload();
+  loadedProjId = id;                        // now safe to autosave/flush this project
+  updateProjUI();
+  if (!opts.keepView){
+    if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+    else if (d.view) map.setView([d.view.lat, d.view.lon], d.view.zoom);
+  }
+}
+function newProjectName(base){
+  const stem = base || "New job";
+  let n = stem, i = 2;
+  const names = projects.map(p => p.name.toLowerCase());
+  while (names.includes(n.toLowerCase())) n = stem + " " + i++;
+  return n;
+}
+async function createProject(name, opts = {}){
+  const id = "p" + Date.now().toString(36);
+  const p = { id, name: name || newProjectName(), savedAt: new Date().toISOString(), pins: 0, layers: 0 };
+  projects.unshift(p);
+  saveRegistry();
+  await kvPut("proj:" + id, { name: p.name, layers: [], pins: [], sections: [] });
+  if (!opts.noSwitch) await setActiveProject(id);
+  return p;
+}
+function renameProject(id){
+  const p = projects.find(p => p.id === id);
+  if (!p) return;
+  const name = (prompt("Project name", p.name) || "").trim();
+  if (!name) return;
+  p.name = name; saveRegistry();
+  if (id === activeProjId){ persistProject(); updateProjUI(); }
+  renderProjects();
+}
+async function deleteProject(id){
+  const p = projects.find(p => p.id === id);
+  if (!p) return;
+  if (!confirm(`Delete project "${p.name}"? This removes its pins, photos and layers on this device. Job files you've already saved are not affected.`)) return;
+  const d = (await kvGet("proj:" + id)) || {};
+  (d.pins || []).forEach(pin => photoDel(pin.id));
+  await kvDel("proj:" + id);
+  projects = projects.filter(x => x.id !== id);
+  saveRegistry();
+  if (id === activeProjId){
+    activeProjId = null; loadedProjId = null; // so flushProject won't resurrect the deleted blob
+    if (projects.length) await setActiveProject(projects[0].id);
+    else await createProject(PRELOADED_DATA.projectTitle);
+  }
+  renderProjects();
+}
+function updateProjUI(){
+  const name = activeName();
+  $("#projName").textContent = name;
+  document.title = name;
+}
+function fmtAgo(iso){
+  if (!iso) return "new";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  return new Date(iso).toISOString().slice(0, 10);
+}
+function renderProjects(){
+  const box = $("#projList");
+  box.innerHTML = "";
+  const EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+  const DEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>';
+  projects.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "proj-item" + (p.id === activeProjId ? " active" : "");
+    row.innerHTML =
+      `<span class="pi-txt"><b>${esc(p.name)}</b>` +
+      `<small>${p.pins || 0} pin${p.pins === 1 ? "" : "s"} · ${p.layers || 0} layer${p.layers === 1 ? "" : "s"} · ${fmtAgo(p.savedAt)}</small></span>` +
+      `<button class="pi-act" data-act="rename" aria-label="Rename project">${EDIT}</button>` +
+      `<button class="pi-act" data-act="del" aria-label="Delete project">${DEL}</button>`;
+    row.addEventListener("click", async e => {
+      const act = e.target.closest(".pi-act");
+      if (act){
+        if (act.dataset.act === "rename") renameProject(p.id);
+        else deleteProject(p.id);
+        return;
+      }
+      if (p.id !== activeProjId) await setActiveProject(p.id);
+      $("#projModal").classList.remove("show");
+    });
+    box.appendChild(row);
+  });
+}
+$("#projTitle").addEventListener("click", () => {
+  renderProjects();
+  $("#projModal").classList.add("show");
+});
+$("#projNew").addEventListener("click", async () => {
+  const name = prompt("New project name", newProjectName());
+  if (name === null) return;                       // cancelled
+  await createProject(name.trim() || newProjectName());
+  $("#projModal").classList.remove("show");
+  toast("Project created — import a file or drop pins");
+});
+$("#projClose").addEventListener("click", () => $("#projModal").classList.remove("show"));
+$("#projModal").addEventListener("click", e => {
+  if (e.target === $("#projModal")) $("#projModal").classList.remove("show");
+});
+async function initProjects(){
+  projects = (await kvGet(PROJ_REG)) || [];
+  activeProjId = await kvGet(PROJ_ACTIVE);
+  if (!Array.isArray(projects) || !projects.length){
+    // first run on this version — fold any existing single session into project #1
+    const id = "p" + Date.now().toString(36);
+    const oldLayers = (await kvGet("layers")) || [];
+    let oldPins = [], oldSections = [];
+    try { oldPins = JSON.parse(localStorage.getItem(LSKEY)) || []; } catch (e) {}
+    try { oldSections = JSON.parse(localStorage.getItem(SECKEY)) || []; } catch (e) {}
+    projects = [{ id, name: PRELOADED_DATA.projectTitle, savedAt: new Date().toISOString(),
+      pins: oldPins.length, layers: (oldLayers || []).length }];
+    activeProjId = id;
+    await kvPut("proj:" + id, { name: PRELOADED_DATA.projectTitle,
+      layers: oldLayers || [], pins: oldPins, sections: oldSections });
+    saveRegistry();
+    await kvPut(PROJ_ACTIVE, id);
+    await kvDel("layers");
+    try { localStorage.removeItem(LSKEY); localStorage.removeItem(SECKEY); } catch (e) {}
+  } else if (!activeProjId || !projects.find(p => p.id === activeProjId)){
+    activeProjId = projects[0].id;
+  }
+  await setActiveProject(activeProjId);
 }
 async function photoPut(id, dataUrl){
   const db = await idb();
@@ -1464,9 +1721,7 @@ window.deletePin = id => {
   renderNotes();
   toast("Pin deleted");
 };
-function persistPins(){
-  try { localStorage.setItem(LSKEY, JSON.stringify(state.pins)); } catch (e) {}
-}
+function persistPins(){ persistProject(); }
 function renderNotes(){
   const box = $("#noteList");
   if (!state.pins.length){ box.innerHTML = '<div class="empty">No pins yet.</div>'; return; }
@@ -1972,14 +2227,14 @@ async function buildJobData(){
   const pins = [];
   for (const p of state.pins)
     pins.push({ ...p, photoData: p.photo ? await photoGet(p.id) : null });
-  return { app: "field-site-map", v: 2, project: PRELOADED_DATA.projectTitle,
+  return { app: "field-site-map", v: 2, project: activeName(),
     savedAt: new Date().toISOString(), layers, pins, sections: state.sections };
 }
 async function saveJob(){
   if (!state.layers.length && !state.pins.length){ toast("Nothing on the map to save"); return; }
   const data = await buildJobData();
   const name = new Date().toISOString().slice(0, 10) + "_" +
-    (PRELOADED_DATA.projectTitle.replace(/[^\w\-]+/g, "-") || "job") + ".json";
+    (activeName().replace(/[^\w\-]+/g, "-") || "job") + ".json";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
   a.download = name;
@@ -1987,50 +2242,85 @@ async function saveJob(){
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   toast("Saved " + name);
 }
-async function loadJob(text){
+let pendingJob = null;                       // job file waiting for the merge/new choice
+function loadJob(text){
   let d;
   try { d = JSON.parse(text); } catch (e) { toast("Not a valid job file"); return; }
   if (d.app !== "field-site-map"){ toast("Not a field-site-map job file"); return; }
-  if ((state.layers.length || state.pins.length) &&
-      !confirm("Replace everything on the map with this job file?")) return;
-  state.layers.forEach(l => map.removeLayer(l.group));
-  state.layers = [];
-  fallbackIdx = 0;
-  state.pins.forEach(p => {
-    const m = pinMarkers.get(p.id);
-    if (m) map.removeLayer(m);
-    photoDel(p.id);
-  });
-  state.pins = [];
-  pinMarkers.clear();
-  sectionLayers.forEach(l => map.removeLayer(l));
-  sectionLayers.clear();
-  state.sections = [];
-  let bounds = null;
-  (d.layers || []).forEach(l => {
-    const b = addLayer(l.name, l.feats || [], l.source || "job file",
-      { color: l.color, visible: l.visible, origin: "import" });
-    bounds = bounds ? bounds.extend(b) : b;
-  });
-  for (const p of (d.pins || [])){
-    const np = { id: p.id || Date.now(), lat: p.lat, lng: p.lng,
-      note: p.note || "Pin", ts: p.ts || "", photo: !!p.photoData };
-    if (p.photoData){
-      try { await photoPut(np.id, p.photoData); } catch (e) { np.photo = false; }
-    }
-    state.pins.push(np);
-    drawPin(np);
-  }
-  (d.sections || []).forEach(s => { state.sections.push(s); drawSection(s); });
-  persistPins();
-  persistSections();
-  renderNotes();
-  renderSections();
+  pendingJob = d;
+  const np = (d.pins || []).length, nl = (d.layers || []).length;
+  $("#loadDesc").textContent =
+    `"${d.project || "job file"}" — ${np} pin${np === 1 ? "" : "s"}, ${nl} layer${nl === 1 ? "" : "s"}. ` +
+    `Merge it into "${activeName()}" (keeps everything already there), or open it as a separate project.`;
+  $("#loadMerge").textContent = `Merge into "${activeName()}"`;
+  $("#loadModal").classList.add("show");
+}
+// open the file as its own project — never touches what's already open
+async function loadAsNew(d){
+  const name = newProjectName(d.project || "Loaded job");
+  await flushProject();
+  const p = await createProject(name, { noSwitch: true });
+  clearMap();
+  activeProjId = p.id;
+  await kvPut(PROJ_ACTIVE, p.id);
+  const bounds = await hydrate(d, true);
+  loadPreload();
+  loadedProjId = p.id;
+  persistProject();
+  updateProjUI();
   if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.2));
   else if (state.pins.length)
     map.flyTo([state.pins[0].lat, state.pins[0].lng], Math.max(map.getZoom(), 16));
-  toast("Job loaded: " + (d.project || "unnamed"));
+  toast("Loaded into new project: " + name);
 }
+// merge a job file INTO the open project — adds its data, keeps existing.
+// incoming pins/sections are re-keyed so two devices' ids can't collide/overwrite.
+async function mergeJob(d){
+  const usedP = new Set(state.pins.map(p => p.id));
+  const usedS = new Set(state.sections.map(s => s.id));
+  let base = Date.now();
+  const freshId = used => { let id = base++; while (used.has(id)) id = base++; used.add(id); return id; };
+  let bounds = L.latLngBounds([]);
+  (d.layers || []).forEach(l => {
+    const b = addLayer(l.name, l.feats || [], l.source || "merged",
+      { color: l.color, visible: l.visible, origin: "import" });
+    if (b && b.isValid()) bounds.extend(b);
+  });
+  let addedPins = 0, addedPhotos = 0;
+  for (const p of (d.pins || [])){
+    const nid = freshId(usedP);
+    const np = { id: nid, lat: p.lat, lng: p.lng, note: p.note || "Pin", ts: p.ts || "",
+      photo: !!p.photoData };
+    if (p.photoData){ try { await photoPut(nid, p.photoData); addedPhotos++; } catch (e) { np.photo = false; } }
+    state.pins.push(np); drawPin(np); bounds.extend([np.lat, np.lng]); addedPins++;
+  }
+  let addedSecs = 0;
+  (d.sections || []).forEach(s => {
+    const ns = { ...s, id: freshId(usedS) };
+    state.sections.push(ns); drawSection(ns); addedSecs++;
+  });
+  renderNotes(); renderSections(); renderLayerList();
+  persistProject();
+  if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
+  toast(`Merged: +${addedPins} pin${addedPins === 1 ? "" : "s"}` +
+    (addedPhotos ? ` (${addedPhotos} photo${addedPhotos === 1 ? "" : "s"})` : "") +
+    (addedSecs ? `, +${addedSecs} section${addedSecs === 1 ? "" : "s"}` : "") +
+    (d.layers && d.layers.length ? `, +${d.layers.length} layer${d.layers.length === 1 ? "" : "s"}` : ""), 4000);
+}
+$("#loadMerge").addEventListener("click", async () => {
+  $("#loadModal").classList.remove("show");
+  if (pendingJob){ const d = pendingJob; pendingJob = null; await mergeJob(d); }
+});
+$("#loadNew").addEventListener("click", async () => {
+  $("#loadModal").classList.remove("show");
+  if (pendingJob){ const d = pendingJob; pendingJob = null; await loadAsNew(d); }
+});
+$("#loadCancel").addEventListener("click", () => {
+  pendingJob = null; $("#loadModal").classList.remove("show");
+});
+$("#loadModal").addEventListener("click", e => {
+  if (e.target === $("#loadModal")){ pendingJob = null; $("#loadModal").classList.remove("show"); }
+});
 $("#btnSaveJob").addEventListener("click", saveJob);
 $("#btnLoadJob").addEventListener("click", () => $("#jobInput").click());
 $("#jobInput").addEventListener("change", e => {
@@ -2240,23 +2530,8 @@ map.on("locationerror", e => {
 
 /* ---------- boot ---------- */
 document.title = PRELOADED_DATA.projectTitle;
-$("#projTitle").textContent = PRELOADED_DATA.projectTitle;
-try {
-  (JSON.parse(localStorage.getItem(LSKEY)) || []).forEach(p => {
-    state.pins.push(p);
-    drawPin(p);
-  });
-} catch (e) {}
-renderNotes();
-try {
-  (JSON.parse(localStorage.getItem(SECKEY)) || []).forEach(s => {
-    state.sections.push(s);
-    drawSection(s);
-  });
-} catch (e) {}
-renderSections();
-restoreLayers().finally(() =>
-  PRELOADED_DATA.kml.forEach(entry => importKML(entry.kml, entry.name, "preload")));
+$("#projName").textContent = PRELOADED_DATA.projectTitle;
+initProjects();
 // flag the secure-context GPS limitation on open, not only after a failed locate
 if (!window.isSecureContext){
   const chip = $("#gpsChip");
