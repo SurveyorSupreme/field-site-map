@@ -384,6 +384,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <!-- ============ Measure panel ============ -->
 <section class="panel" id="panel-measure">
   <div class="panel-head"><h3>Measure</h3><button class="pclose" data-close>&#10005;</button></div>
+  <div class="seg" id="measMode">
+    <button data-mode="dist" class="on">Distance</button>
+    <button data-mode="area">Area</button>
+  </div>
   <div class="meas-big">
     <span id="measTotal">0 m</span>
     <span class="meas-sub" id="measPts">tap the map to start</span>
@@ -1148,32 +1152,78 @@ map.on("popupopen", e => {
 });
 
 /* ---------- measure tool ---------- */
-const meas = { pts: [], dots: [], line: null, total: 0 };
+const meas = { pts: [], dots: [], line: null, poly: null, total: 0, perim: 0, mode: "dist" };
+// geodesic ring area (same spherical model as the distance readout — ~0.3% vs grid at
+// Canterbury latitudes; fine for field quantities, not for set-out). Returns m².
+function ringArea(pts){
+  const n = pts.length;
+  if (n < 3) return 0;
+  const R = 6378137, d2r = Math.PI / 180;
+  let a = 0;
+  for (let i = 0; i < n; i++){
+    const p1 = pts[i], p2 = pts[(i + 1) % n];
+    a += (p2.lng - p1.lng) * d2r * (2 + Math.sin(p1.lat * d2r) + Math.sin(p2.lat * d2r));
+  }
+  return Math.abs(a * R * R / 2);
+}
+function fmtArea(m2){
+  if (m2 < 10000) return Math.round(m2).toLocaleString("en-NZ") + " m²";
+  const ha = m2 / 10000;
+  return ha.toFixed(ha < 100 ? 3 : 2) + " ha (" + Math.round(m2).toLocaleString("en-NZ") + " m²)";
+}
 function measureAdd(ll){
   meas.pts.push(ll);
   meas.dots.push(L.circleMarker(ll, { radius: 5, color: "#fff", weight: 2,
     fillColor: THEME.accent, fillOpacity: 1, interactive: false }).addTo(map));
-  if (!meas.line)
-    meas.line = L.polyline([], { color: THEME.accent, weight: 3, dashArray: "1 7",
-      lineCap: "round", interactive: false }).addTo(map);
   refreshMeasure();
 }
 function refreshMeasure(){
-  if (meas.line) meas.line.setLatLngs(meas.pts);
-  meas.total = 0;
-  for (let i = 1; i < meas.pts.length; i++)
-    meas.total += map.distance(meas.pts[i - 1], meas.pts[i]);
-  $("#measTotal").textContent = fmtDist(meas.total);
-  $("#measPts").textContent = meas.pts.length
-    ? `${meas.pts.length} point${meas.pts.length > 1 ? "s" : ""}`
-    : "tap the map to start";
   meas.dots.forEach(d => { if (d.getTooltip()) d.unbindTooltip(); });
-  if (meas.dots.length > 1)
-    meas.dots[meas.dots.length - 1]
-      .bindTooltip(fmtDist(meas.total), { permanent: true, direction: "top",
-        offset: [0, -7], className: "meas-tip" })
-      .openTooltip();
+  if (meas.mode === "area"){
+    if (meas.line){ map.removeLayer(meas.line); meas.line = null; }
+    if (!meas.poly)
+      meas.poly = L.polygon([], { color: THEME.accent, weight: 3, dashArray: "1 7",
+        fillColor: THEME.accent, fillOpacity: 0.18, interactive: false }).addTo(map);
+    meas.poly.setLatLngs(meas.pts);
+    meas.total = ringArea(meas.pts);
+    let per = 0;
+    for (let i = 1; i < meas.pts.length; i++) per += map.distance(meas.pts[i - 1], meas.pts[i]);
+    if (meas.pts.length > 2) per += map.distance(meas.pts[meas.pts.length - 1], meas.pts[0]);
+    meas.perim = per;
+    $("#measTotal").textContent = meas.pts.length >= 3 ? fmtArea(meas.total) : "0 m²";
+    $("#measPts").textContent = meas.pts.length
+      ? `${meas.pts.length} pt${meas.pts.length > 1 ? "s" : ""}` +
+        (meas.pts.length >= 3 ? ` · perimeter ${fmtDist(per)}` : " · tap 3+ points")
+      : "tap the map to enclose an area";
+  } else {
+    if (meas.poly){ map.removeLayer(meas.poly); meas.poly = null; }
+    if (!meas.line)
+      meas.line = L.polyline([], { color: THEME.accent, weight: 3, dashArray: "1 7",
+        lineCap: "round", interactive: false }).addTo(map);
+    meas.line.setLatLngs(meas.pts);
+    meas.total = 0;
+    for (let i = 1; i < meas.pts.length; i++)
+      meas.total += map.distance(meas.pts[i - 1], meas.pts[i]);
+    $("#measTotal").textContent = fmtDist(meas.total);
+    $("#measPts").textContent = meas.pts.length
+      ? `${meas.pts.length} point${meas.pts.length > 1 ? "s" : ""}`
+      : "tap the map to start";
+    if (meas.dots.length > 1)
+      meas.dots[meas.dots.length - 1]
+        .bindTooltip(fmtDist(meas.total), { permanent: true, direction: "top",
+          offset: [0, -7], className: "meas-tip" })
+        .openTooltip();
+  }
 }
+$("#measMode").querySelectorAll("button").forEach(b =>
+  b.addEventListener("click", () => {
+    if (meas.mode === b.dataset.mode) return;
+    meas.mode = b.dataset.mode;
+    $("#measMode").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    $("#secName").placeholder = meas.mode === "area"
+      ? "Area name — e.g. topsoil strip" : "Section name — e.g. SS run MH3–MH4";
+    $("#measClear").click();                 // reset points and redraw for the new mode
+  }));
 $("#measUndo").addEventListener("click", () => {
   if (!meas.pts.length) return;
   meas.pts.pop();
@@ -1183,37 +1233,50 @@ $("#measUndo").addEventListener("click", () => {
 $("#measClear").addEventListener("click", () => {
   meas.dots.forEach(d => map.removeLayer(d));
   if (meas.line) map.removeLayer(meas.line);
-  meas.pts = []; meas.dots = []; meas.line = null;
+  if (meas.poly) map.removeLayer(meas.poly);
+  meas.pts = []; meas.dots = []; meas.line = null; meas.poly = null;
   refreshMeasure();
 });
 
 /* ---------- saved sections ---------- */
 const sectionLayers = new Map();
 const SECKEY = "fsm:" + PRELOADED_DATA.projectTitle + ":sections";
+function secVal(s){ return s.type === "area" ? fmtArea(s.area) : fmtDist(s.dist); }
 function drawSection(s){
-  const line = L.polyline(s.latlngs, { color: THEME.accent, weight: 3, opacity: 0.95 });
-  line.bindTooltip(`${s.name} — ${fmtDist(s.dist)}`,
+  const area = s.type === "area";
+  const lyr = area
+    ? L.polygon(s.latlngs, { color: THEME.accent, weight: 3, fillColor: THEME.accent,
+        fillOpacity: 0.18, opacity: 0.95 })
+    : L.polyline(s.latlngs, { color: THEME.accent, weight: 3, opacity: 0.95 });
+  lyr.bindTooltip(`${s.name} — ${secVal(s)}`,
     { permanent: true, direction: "center", className: "sec-tip" });
-  line.bindPopup(`<div class="pop"><b>${esc(s.name)}</b>` +
-    `<span class="pop-rl">${fmtDist(s.dist)}</span><span>${s.ts}</span>` +
-    `<button class="pop-del" onclick="deleteSection(${s.id})">Delete section</button></div>`);
-  line.on("click", toolForward);
-  line.addTo(map);
-  sectionLayers.set(s.id, line);
+  lyr.bindPopup(`<div class="pop"><b>${esc(s.name)}</b>` +
+    `<span class="pop-rl">${secVal(s)}</span><span>${s.ts}</span>` +
+    `<button class="pop-del" onclick="deleteSection(${s.id})">Delete ${area ? "area" : "section"}</button></div>`);
+  lyr.on("click", toolForward);
+  lyr.addTo(map);
+  sectionLayers.set(s.id, lyr);
 }
 function saveSection(){
-  if (meas.pts.length < 2){ toast("Measure at least two points first"); return; }
-  const name = $("#secName").value.trim() || `Section ${state.sections.length + 1}`;
-  const s = { id: Date.now(), name, dist: meas.total,
-    latlngs: meas.pts.map(ll => [ll.lat, ll.lng]),
-    ts: new Date().toISOString().slice(0, 10) };
+  const area = meas.mode === "area";
+  if (meas.pts.length < (area ? 3 : 2)){
+    toast(area ? "Tap at least three points to enclose an area" : "Measure at least two points first");
+    return;
+  }
+  const name = $("#secName").value.trim() ||
+    `${area ? "Area" : "Section"} ${state.sections.length + 1}`;
+  const latlngs = meas.pts.map(ll => [ll.lat, ll.lng]);
+  const ts = new Date().toISOString().slice(0, 10);
+  const s = area
+    ? { id: Date.now(), name, type: "area", area: meas.total, perim: meas.perim, latlngs, ts }
+    : { id: Date.now(), name, type: "line", dist: meas.total, latlngs, ts };
   state.sections.push(s);
   drawSection(s);
   persistSections();
   renderSections();
   $("#secName").value = "";
   $("#measClear").click();
-  toast(`Saved ${name} — ${fmtDist(s.dist)}`);
+  toast(`Saved ${name} — ${secVal(s)}`);
 }
 window.deleteSection = id => {
   const l = sectionLayers.get(id);
@@ -1233,7 +1296,7 @@ function renderSections(){
     const row = document.createElement("div");
     row.className = "note-item";
     row.innerHTML =
-      `<span class="note-txt"><b>${esc(s.name)}</b><small>${fmtDist(s.dist)} · ${s.ts}</small></span>` +
+      `<span class="note-txt"><b>${esc(s.name)}</b><small>${secVal(s)} · ${s.ts}</small></span>` +
       `<button class="note-del" aria-label="Delete section">&#10005;</button>`;
     row.addEventListener("click", e => {
       if (e.target.closest(".note-del")){ deleteSection(s.id); return; }
@@ -2434,11 +2497,15 @@ async function exportZip(){
   }
   files.unshift({ name: "pins.csv", data: enc.encode(csv) });
   if (state.sections.length){
-    let sc = "﻿section,point,lat,lon,nztm_e,nztm_n,length_m\r\n";
-    state.sections.forEach(s => s.latlngs.forEach((ll, i) => {
-      const [E, N] = tmForward(ll[0], ll[1], NZTM);
-      sc += `${csvQ(s.name)},${i + 1},${ll[0].toFixed(8)},${ll[1].toFixed(8)},${E.toFixed(2)},${N.toFixed(2)},${s.dist.toFixed(1)}\r\n`;
-    }));
+    let sc = "﻿section,type,point,lat,lon,nztm_e,nztm_n,length_m,area_m2\r\n";
+    state.sections.forEach(s => {
+      const area = s.type === "area";
+      s.latlngs.forEach((ll, i) => {
+        const [E, N] = tmForward(ll[0], ll[1], NZTM);
+        sc += `${csvQ(s.name)},${area ? "area" : "line"},${i + 1},${ll[0].toFixed(8)},${ll[1].toFixed(8)},` +
+          `${E.toFixed(2)},${N.toFixed(2)},${area ? "" : s.dist.toFixed(1)},${area ? s.area.toFixed(1) : ""}\r\n`;
+      });
+    });
     files.push({ name: "sections.csv", data: enc.encode(sc) });
   }
   // KML — opens in Google Earth or re-imports into this app
@@ -2451,9 +2518,16 @@ async function exportZip(){
   });
   kml += "</Folder><Folder><name>Sections</name>";
   state.sections.forEach(s => {
-    kml += `<Placemark><name>${esc(s.name)} (${fmtDist(s.dist)})</name><LineString><coordinates>` +
-      s.latlngs.map(ll => `${ll[1]},${ll[0]},0`).join(" ") +
-      "</coordinates></LineString></Placemark>";
+    const coords = s.latlngs.map(ll => `${ll[1]},${ll[0]},0`).join(" ");
+    if (s.type === "area"){
+      const close = s.latlngs.length ? ` ${s.latlngs[0][1]},${s.latlngs[0][0]},0` : "";
+      kml += `<Placemark><name>${esc(s.name)} (${secVal(s)})</name>` +
+        `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coords}${close}` +
+        `</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>`;
+    } else {
+      kml += `<Placemark><name>${esc(s.name)} (${secVal(s)})</name>` +
+        `<LineString><coordinates>${coords}</coordinates></LineString></Placemark>`;
+    }
   });
   kml += "</Folder></Document></kml>";
   files.push({ name: "pins-and-sections.kml", data: enc.encode(kml) });
