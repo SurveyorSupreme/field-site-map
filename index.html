@@ -433,7 +433,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <section class="panel" id="panel-notes">
   <div class="panel-head"><h3>Notes</h3><button class="pclose" data-close>&#10005;</button></div>
   <div class="panel-body" id="noteList"><div class="empty">No pins yet.</div></div>
-  <div class="panel-foot"><button class="btn" id="btnExport">Export all — CSV + KML + photos (zip)</button></div>
+  <div class="panel-foot">
+    <button class="btn accent" id="btnReport">PDF site report</button>
+    <div class="btn-row" style="padding:10px 0 0">
+      <button class="btn" id="btnExport">Export data — CSV + KML + photos (zip)</button>
+    </div>
+  </div>
 </section>
 
 <!-- ============ bottom nav ============ -->
@@ -495,6 +500,10 @@ const THEME = { accent: "#4ade80" };
 // differences so the number is never ambiguous. Change to "invert to invert",
 // "centreline to centreline", or "level to level — verify" if a job's data differs.
 const CROSSING_DATUM = "top of pipe to top of pipe";
+// Letterhead for the printed PDF site report (Notes → PDF site report).
+// `logo` can be a data-URL (e.g. "data:image/png;base64,...") to print a real logo;
+// leave it "" to print the company name as text.
+const REPORT = { company: "Schick Group", subtitle: "Site Photo Record", logo: "" };
 /* ============================ end of editable block ================= */
 
 if (typeof L === "undefined") {
@@ -2542,6 +2551,136 @@ async function exportZip(){
   toast("Exported " + name);
 }
 $("#btnExport").addEventListener("click", exportZip);
+
+/* ---------- PDF site report (print-to-PDF; no library, works offline) ----------
+   Builds a branded HTML report in a new tab and calls window.print(); the user
+   picks "Save as PDF". Real selectable text, embedded photos, numbered photo log
+   cross-referenced to an indicative location plan. The office-facing deliverable. */
+function niceMetres(m){
+  const pow = Math.pow(10, Math.floor(Math.log10(m || 1)));
+  const f = m / pow;
+  const n = f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10;
+  return Math.max(1, Math.round(n * pow));
+}
+function reportPlanSVG(items){
+  const pts = items.map(it => ({ lat: it.p.lat, lng: it.p.lng }));
+  state.sections.forEach(s => s.latlngs.forEach(ll => pts.push({ lat: ll[0], lng: ll[1] })));
+  if (!pts.length) return "";
+  let minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
+  pts.forEach(p => { minLa = Math.min(minLa, p.lat); maxLa = Math.max(maxLa, p.lat);
+    minLo = Math.min(minLo, p.lng); maxLo = Math.max(maxLo, p.lng); });
+  if (maxLa - minLa < 1e-7){ minLa -= 2.5e-4; maxLa += 2.5e-4; }
+  if (maxLo - minLo < 1e-7){ minLo -= 2.5e-4; maxLo += 2.5e-4; }
+  const latMid = (minLa + maxLa) / 2;
+  const mLat = 111320, mLng = 111320 * Math.cos(latMid * Math.PI / 180);
+  const wM = (maxLo - minLo) * mLng, hM = (maxLa - minLa) * mLat;
+  const W = 760, H = 430, pad = 30;
+  const scale = Math.min((W - 2 * pad) / wM, (H - 2 * pad) / hM);
+  const offX = (W - wM * scale) / 2, offY = (H - hM * scale) / 2;
+  const X = lng => offX + (lng - minLo) * mLng * scale;
+  const Y = lat => offY + (maxLa - lat) * mLat * scale;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="plan">`;
+  svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f4f5f7" stroke="#cdd2d8"/>`;
+  state.sections.forEach(s => {
+    const d = s.latlngs.map(ll => `${X(ll[1]).toFixed(1)},${Y(ll[0]).toFixed(1)}`).join(" ");
+    svg += s.type === "area"
+      ? `<polygon points="${d}" fill="rgba(74,222,128,.18)" stroke="#3b9c5e" stroke-width="1.6"/>`
+      : `<polyline points="${d}" fill="none" stroke="#3b9c5e" stroke-width="1.6"/>`;
+  });
+  items.forEach((it, i) => {
+    const cx = X(it.p.lng).toFixed(1), cy = Y(it.p.lat).toFixed(1);
+    svg += `<circle cx="${cx}" cy="${cy}" r="11" fill="#e23b3b" stroke="#fff" stroke-width="1.6"/>` +
+      `<text x="${cx}" y="${cy}" text-anchor="middle" dy="3.7" font-size="11" font-weight="700" fill="#fff">${i + 1}</text>`;
+  });
+  svg += `<g transform="translate(${W - 34},34)"><polygon points="0,-16 6,8 0,3 -6,8" fill="#222"/>` +
+    `<text x="0" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#222">N</text></g>`;
+  const tM = niceMetres(wM / 4), barPx = tM * scale, bx = pad, by = H - 16;
+  svg += `<rect x="${bx}" y="${by}" width="${barPx.toFixed(1)}" height="5" fill="#222"/>` +
+    `<text x="${bx}" y="${by - 4}" font-size="11" fill="#222">${tM} m</text>`;
+  return svg + "</svg>";
+}
+async function exportReport(){
+  if (!state.pins.length && !state.sections.length){
+    toast("Nothing to report yet — add pins or sections first"); return;
+  }
+  toast("Building report…");
+  const NZTM = PROJECTIONS[0], accent = THEME.accent, title = activeName();
+  const items = [];
+  for (const p of state.pins) items.push({ p, photo: p.photo ? await photoGet(p.id) : null });
+  const now = new Date();
+  const stamp = now.toISOString().slice(0, 10) + " " + now.toTimeString().slice(0, 5);
+  const nPhoto = items.filter(i => i.photo).length;
+  const head = REPORT.logo
+    ? `<img class="logo" src="${REPORT.logo}" alt="">`
+    : `<div class="company">${esc(REPORT.company)}</div>`;
+  const log = items.map((it, i) => {
+    const [E, N] = tmForward(it.p.lat, it.p.lng, NZTM);
+    return `<div class="item"><div class="num">${i + 1}</div>` +
+      (it.photo ? `<img class="photo" src="${it.photo}" alt="">`
+                : `<div class="photo nophoto">No photo</div>`) +
+      `<div class="detail"><div class="note">${esc(it.p.note)}</div>` +
+      `<div class="meta">${esc(it.p.ts)}</div>` +
+      `<div class="coord">${it.p.lat.toFixed(6)}, ${it.p.lng.toFixed(6)}</div>` +
+      `<div class="coord">NZTM2000&nbsp;&nbsp;${E.toFixed(1)} E&nbsp;&nbsp;${N.toFixed(1)} N</div>` +
+      `</div></div>`;
+  }).join("");
+  const secBlock = state.sections.length
+    ? `<h2>Measured items</h2><table class="sec"><thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead><tbody>` +
+      state.sections.map(s => `<tr><td>${esc(s.name)}</td><td>${s.type === "area" ? "Area" : "Line"}</td><td>${secVal(s)}</td></tr>`).join("") +
+      `</tbody></table>` : "";
+  const planBlock = `<h2>Location plan</h2><div class="planwrap">${reportPlanSVG(items)}</div>` +
+    `<div class="cap">Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.</div>`;
+  const css = `*{box-sizing:border-box}
+body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;background:#fff}
+.toolbar{position:sticky;top:0;background:#14181d;color:#e8eaed;padding:10px 16px;display:flex;gap:12px;align-items:center}
+.toolbar button{background:${accent};border:0;color:#0b120d;font-weight:700;padding:8px 16px;border-radius:7px;cursor:pointer;font-size:14px}
+.toolbar span{font-size:12px;color:#9aa4b0}
+.rpt-head{display:flex;justify-content:space-between;align-items:flex-end;padding:18px 22px 0}
+.company{font-size:22px;font-weight:800;letter-spacing:.5px}
+.logo{max-height:46px}
+.subtitle{font-size:12px;color:#5b6470;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px}
+.accentbar{flex:1;height:6px;background:${accent};margin-left:20px;border-radius:3px}
+.rpt-meta{padding:14px 22px 4px}
+.rpt-meta h1{margin:0 0 4px;font-size:19px}
+.metaline{font-size:12px;color:#5b6470}
+h2{font-size:14px;margin:20px 22px 8px;padding-bottom:5px;border-bottom:2px solid #e6e9ec;text-transform:uppercase;letter-spacing:1px;color:#3a4149}
+.planwrap{padding:0 22px}
+.plan{width:100%;height:auto;border-radius:6px}
+.cap{padding:4px 22px 0;font-size:11px;color:#8a929c;font-style:italic}
+.log{padding:4px 22px}
+.item{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid #eceef1;page-break-inside:avoid;break-inside:avoid}
+.num{flex:0 0 26px;width:26px;height:26px;border-radius:50%;background:#e23b3b;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
+.photo{flex:0 0 auto;width:64mm;height:48mm;object-fit:cover;border-radius:6px;border:1px solid #d7dbe0;background:#f0f1f3}
+.nophoto{display:flex;align-items:center;justify-content:center;color:#9aa4b0;font-size:12px}
+.detail{flex:1;min-width:0}
+.note{font-weight:700;font-size:14px;margin-bottom:3px}
+.meta{font-size:12px;color:#5b6470;margin-bottom:6px}
+.coord{font-size:11.5px;color:#3a4149;font-family:ui-monospace,Consolas,monospace}
+table.sec{width:calc(100% - 44px);margin:0 22px;border-collapse:collapse;font-size:12.5px}
+table.sec th,table.sec td{text-align:left;padding:7px 10px;border-bottom:1px solid #e6e9ec}
+table.sec th{background:#f4f5f7;text-transform:uppercase;font-size:11px;letter-spacing:.5px;color:#5b6470}
+.rpt-foot{margin-top:24px;padding:12px 22px;border-top:2px solid ${accent};font-size:11px;color:#8a929c}
+@media print{.toolbar{display:none!important}.rpt-head{padding-top:0}@page{margin:14mm}}`;
+  const doc = `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>${esc(title)} — ${esc(REPORT.subtitle)}</title><style>${css}</style></head><body>` +
+    `<div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button>` +
+    `<span>Then choose “Save as PDF” as the destination.</span></div>` +
+    `<header class="rpt-head"><div>${head}<div class="subtitle">${esc(REPORT.subtitle)}</div></div><div class="accentbar"></div></header>` +
+    `<section class="rpt-meta"><h1>${esc(title)}</h1>` +
+    `<div class="metaline">Generated ${esc(stamp)}</div>` +
+    `<div class="metaline">${nPhoto} photo${nPhoto === 1 ? "" : "s"} · ${items.length} note${items.length === 1 ? "" : "s"} · ${state.sections.length} measured item${state.sections.length === 1 ? "" : "s"}</div></section>` +
+    planBlock +
+    `<h2>Photo &amp; note log</h2><div class="log">${log || '<div class="cap">No notes recorded.</div>'}</div>` +
+    secBlock +
+    `<footer class="rpt-foot">${esc(REPORT.company)} · Field Site Map · ${esc(stamp)}</footer>` +
+    `<script>window.addEventListener('load',function(){setTimeout(function(){try{window.print()}catch(e){}},500)});<\/script>` +
+    `</body></html>`;
+  const w = window.open("", "_blank");
+  if (!w){ toast("Allow pop-ups for this site to generate the report"); return; }
+  w.document.open(); w.document.write(doc); w.document.close();
+}
+$("#btnReport").addEventListener("click", exportReport);
 
 /* ---------- GPS locate ---------- */
 function gpsErrText(code){
