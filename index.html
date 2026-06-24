@@ -352,6 +352,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <div class="tap-row" data-k="sections"><span>Measurements</span><span class="tap-sw"></span></div>
     <div class="tap-row" data-k="layers"><span>Layers / linework</span><span class="tap-sw"></span></div>
   </div>
+  <div class="tap-sep"></div>
+  <div class="tap-row" data-k="dragPins"><span>Move pins (drag)</span><span class="tap-sw"></span></div>
 </div>
 <div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
 <div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
@@ -667,17 +669,25 @@ function featureClick(e){ recordClick(e); toolForward(e); }
    Master "Tap to open info" off = locked (taps just pan, no popups). Per-category
    toggles let you, e.g., pick only pins + measurements and ignore CAD linework. */
 let bypassTapGate = false;   // set when WE open a popup programmatically (Notes list)
-const tapSel = { enabled: true, pins: true, sections: true, layers: true };
+// dragPins defaults OFF so a swipe never accidentally moves a saved pin
+const tapSel = { enabled: true, pins: true, sections: true, layers: true, dragPins: false };
 try { Object.assign(tapSel, JSON.parse(localStorage.getItem("fsm:tapsel") || "{}")); } catch (e) {}
 function tapSelSave(){ try { localStorage.setItem("fsm:tapsel", JSON.stringify(tapSel)); } catch (e) {} }
+function applyPinDrag(){     // enable/disable dragging on all saved pins to match the toggle
+  pinMarkers.forEach(m => { if (m.dragging) tapSel.dragPins ? m.dragging.enable() : m.dragging.disable(); });
+}
 function renderTapMenu(){
   document.querySelectorAll("#tapMenu .tap-row").forEach(r => r.classList.toggle("on", !!tapSel[r.dataset.k]));
   const cats = $("#tapCats"); if (cats) cats.classList.toggle("dim", !tapSel.enabled);
-  const dflt = tapSel.enabled && tapSel.pins && tapSel.sections && tapSel.layers;
+  const dflt = tapSel.enabled && tapSel.pins && tapSel.sections && tapSel.layers && !tapSel.dragPins;
   $("#btnTap").classList.toggle("on", !dflt);
 }
 document.querySelectorAll("#tapMenu .tap-row").forEach(r =>
-  r.addEventListener("click", () => { tapSel[r.dataset.k] = !tapSel[r.dataset.k]; tapSelSave(); renderTapMenu(); }));
+  r.addEventListener("click", () => {
+    tapSel[r.dataset.k] = !tapSel[r.dataset.k];
+    tapSelSave(); renderTapMenu();
+    if (r.dataset.k === "dragPins") applyPinDrag();
+  }));
 $("#btnTap").addEventListener("click", e => {
   e.stopPropagation();
   $("#tapMenu").classList.toggle("show");
@@ -2030,6 +2040,7 @@ function popHtml(p){
 }
 function drawPin(p){
   const m = L.marker([p.lat, p.lng], { icon: pinIcon(false, hasPhoto(p)), draggable: true }).addTo(map);
+  if (m.dragging && !tapSel.dragPins) m.dragging.disable();   // off by default — no accidental moves
   m.on("dragend", () => {
     p.lat = m.getLatLng().lat; p.lng = m.getLatLng().lng;
     persistPins(); renderNotes();
