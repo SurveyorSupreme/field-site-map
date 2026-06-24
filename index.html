@@ -3171,6 +3171,20 @@ map.on("locationerror", e => {
 document.title = PRELOADED_DATA.projectTitle;
 $("#projName").textContent = PRELOADED_DATA.projectTitle;
 initProjects();
+// ask the browser to keep this app's data persistent so it isn't evicted under
+// storage pressure — the only thing that should then clear it is the user wiping
+// site data. (The browser decides whether to grant; we just request it.)
+(async () => {
+  try {
+    if (!navigator.storage || !navigator.storage.persist) return;
+    if (await navigator.storage.persisted()) return;          // already protected
+    const granted = await navigator.storage.persist();
+    if (granted && !localStorage.getItem("fsm:persistToast")){
+      localStorage.setItem("fsm:persistToast", "1");
+      toast("Saved data is now protected on this device", 4000);
+    }
+  } catch (e) {}
+})();
 // flag the secure-context GPS limitation on open, not only after a failed locate
 if (!window.isSecureContext){
   const chip = $("#gpsChip");
