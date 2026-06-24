@@ -434,6 +434,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   <div class="panel-head"><h3>Notes</h3><button class="pclose" data-close>&#10005;</button></div>
   <div class="panel-body" id="noteList"><div class="empty">No pins yet.</div></div>
   <div class="panel-foot">
+    <div class="seg" id="expScope" style="padding:0 0 6px">
+      <button data-scope="all" class="on">Whole project</button>
+      <button data-scope="view">This map view</button>
+    </div>
+    <div id="expHint" style="font-size:11.5px;color:var(--dim);padding:0 2px 10px"></div>
     <button class="btn accent" id="btnReport">PDF site report</button>
     <div class="btn-row" style="padding:10px 0 0">
       <button class="btn" id="btnExport">Export data — CSV + KML + photos (zip)</button>
@@ -1127,6 +1132,7 @@ function setPanel(name){
                activePanel === "pin" ? "pin" : null;
   $("#map").classList.toggle("crosshair", !!state.tool);
   if (activePanel !== "pin") cancelPendingPin();
+  if (activePanel === "notes" && typeof updateExpHint === "function") updateExpHint();
 }
 document.querySelectorAll("#nav button").forEach(b =>
   b.addEventListener("click", () => setPanel(b.dataset.panel)));
@@ -2306,14 +2312,15 @@ document.addEventListener("click", e => {
 });
 
 /* ---------- job file save / load ---------- */
-async function buildJobData(){
+async function buildJobData(pinList, secList){
+  const srcPins = pinList || state.pins, srcSecs = secList || state.sections;
   const layers = state.layers.map(l => ({ name: l.name, source: l.source,
     color: l.color, visible: l.visible, feats: l.feats }));
   const pins = [];
-  for (const p of state.pins)
+  for (const p of srcPins)
     pins.push({ ...p, photoData: p.photo ? await photoGet(p.id) : null });
   return { app: "field-site-map", v: 2, project: activeName(),
-    savedAt: new Date().toISOString(), layers, pins, sections: state.sections };
+    savedAt: new Date().toISOString(), layers, pins, sections: srcSecs };
 }
 async function saveJob(){
   if (!state.layers.length && !state.pins.length){ toast("Nothing on the map to save"); return; }
@@ -2479,9 +2486,41 @@ function makeZip(files){ // stored (no compression) — fine for JPEGs and small
   end.setUint32(16, offset, true);
   return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
 }
+/* ---------- export scope (whole project vs just the current map view) ----------
+   Lets a long linear job be exported window-by-window so the report's location
+   plan stays readable instead of squashing the whole road into one strip. */
+let exportScope = "all";          // "all" | "view"
+function scopedData(){
+  if (exportScope !== "view") return { pins: state.pins, sections: state.sections };
+  const b = map.getBounds();
+  const pins = state.pins.filter(p => b.contains([p.lat, p.lng]));
+  const sections = state.sections.filter(s => {
+    const sb = L.latLngBounds(s.latlngs);
+    return sb.isValid() && b.intersects(sb);
+  });
+  return { pins, sections };
+}
+function updateExpHint(){
+  const el = $("#expHint");
+  if (!el) return;
+  const { pins, sections } = scopedData();
+  el.textContent = (exportScope === "view" ? "This map view — " : "Whole project — ") +
+    `${pins.length} pin${pins.length === 1 ? "" : "s"} · ${sections.length} item${sections.length === 1 ? "" : "s"}` +
+    (exportScope === "view" ? " (pan/zoom to reframe)" : "");
+}
+$("#expScope").querySelectorAll("button").forEach(b =>
+  b.addEventListener("click", () => {
+    exportScope = b.dataset.scope;
+    $("#expScope").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    updateExpHint();
+  }));
+map.on("moveend zoomend", () => { if (activePanel === "notes") updateExpHint(); });
+
 async function exportZip(){
-  if (!state.pins.length && !state.sections.length){
-    toast("Nothing to export — drop some pins or save a section first");
+  const { pins: sPins, sections: sSecs } = scopedData();
+  if (!sPins.length && !sSecs.length){
+    toast(exportScope === "view" ? "Nothing in this map view — pan to where your pins are"
+                                 : "Nothing to export — drop some pins or save a section first");
     return;
   }
   const enc = new TextEncoder();
@@ -2490,7 +2529,7 @@ async function exportZip(){
   const csvQ = s => '"' + String(s).replace(/"/g, '""') + '"';
   // pins.csv — NZTM2000 coords so it drops straight into 12d
   let csv = "﻿note,lat,lon,nztm_e,nztm_n,time,photo\r\n";
-  for (const p of state.pins){
+  for (const p of sPins){
     const [E, N] = tmForward(p.lat, p.lng, NZTM);
     const photoName = p.photo ? `photos/pin-${p.id}.jpg` : "";
     csv += `${csvQ(p.note)},${p.lat.toFixed(8)},${p.lng.toFixed(8)},${E.toFixed(2)},${N.toFixed(2)},${p.ts},${photoName}\r\n`;
@@ -2505,9 +2544,9 @@ async function exportZip(){
     }
   }
   files.unshift({ name: "pins.csv", data: enc.encode(csv) });
-  if (state.sections.length){
+  if (sSecs.length){
     let sc = "﻿section,type,point,lat,lon,nztm_e,nztm_n,length_m,area_m2\r\n";
-    state.sections.forEach(s => {
+    sSecs.forEach(s => {
       const area = s.type === "area";
       s.latlngs.forEach((ll, i) => {
         const [E, N] = tmForward(ll[0], ll[1], NZTM);
@@ -2521,12 +2560,12 @@ async function exportZip(){
   let kml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>' +
     esc(PRELOADED_DATA.projectTitle) + ' export</name><Folder><name>Pins</name>';
-  state.pins.forEach(p => {
+  sPins.forEach(p => {
     kml += `<Placemark><name>${esc(p.note)}</name><description>${esc(p.ts)}</description>` +
       `<Point><coordinates>${p.lng},${p.lat},0</coordinates></Point></Placemark>`;
   });
   kml += "</Folder><Folder><name>Sections</name>";
-  state.sections.forEach(s => {
+  sSecs.forEach(s => {
     const coords = s.latlngs.map(ll => `${ll[1]},${ll[0]},0`).join(" ");
     if (s.type === "area"){
       const close = s.latlngs.length ? ` ${s.latlngs[0][1]},${s.latlngs[0][0]},0` : "";
@@ -2540,9 +2579,10 @@ async function exportZip(){
   });
   kml += "</Folder></Document></kml>";
   files.push({ name: "pins-and-sections.kml", data: enc.encode(kml) });
-  files.push({ name: "job.json", data: enc.encode(JSON.stringify(await buildJobData())) });
+  files.push({ name: "job.json", data: enc.encode(JSON.stringify(await buildJobData(sPins, sSecs))) });
   const name = new Date().toISOString().slice(0, 10) + "_" +
-    (PRELOADED_DATA.projectTitle.replace(/[^\w\-]+/g, "-") || "job") + "_export.zip";
+    (activeName().replace(/[^\w\-]+/g, "-") || "job") +
+    (exportScope === "view" ? "_view" : "") + "_export.zip";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(makeZip(files));
   a.download = name;
@@ -2562,9 +2602,10 @@ function niceMetres(m){
   const n = f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10;
   return Math.max(1, Math.round(n * pow));
 }
-function reportPlanSVG(items){
+function reportPlanSVG(items, sections){
+  sections = sections || state.sections;
   const pts = items.map(it => ({ lat: it.p.lat, lng: it.p.lng }));
-  state.sections.forEach(s => s.latlngs.forEach(ll => pts.push({ lat: ll[0], lng: ll[1] })));
+  sections.forEach(s => s.latlngs.forEach(ll => pts.push({ lat: ll[0], lng: ll[1] })));
   if (!pts.length) return "";
   let minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
   pts.forEach(p => { minLa = Math.min(minLa, p.lat); maxLa = Math.max(maxLa, p.lat);
@@ -2581,7 +2622,7 @@ function reportPlanSVG(items){
   const Y = lat => offY + (maxLa - lat) * mLat * scale;
   let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="plan">`;
   svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="#f4f5f7" stroke="#cdd2d8"/>`;
-  state.sections.forEach(s => {
+  sections.forEach(s => {
     const d = s.latlngs.map(ll => `${X(ll[1]).toFixed(1)},${Y(ll[0]).toFixed(1)}`).join(" ");
     svg += s.type === "area"
       ? `<polygon points="${d}" fill="rgba(74,222,128,.18)" stroke="#3b9c5e" stroke-width="1.6"/>`
@@ -2600,13 +2641,16 @@ function reportPlanSVG(items){
   return svg + "</svg>";
 }
 async function exportReport(){
-  if (!state.pins.length && !state.sections.length){
-    toast("Nothing to report yet — add pins or sections first"); return;
+  const { pins: sPins, sections: sSecs } = scopedData();
+  if (!sPins.length && !sSecs.length){
+    toast(exportScope === "view" ? "Nothing in this map view — pan to where your pins are"
+                                 : "Nothing to report yet — add pins or sections first");
+    return;
   }
   toast("Building report…");
   const NZTM = PROJECTIONS[0], accent = THEME.accent, title = activeName();
   const items = [];
-  for (const p of state.pins) items.push({ p, photo: p.photo ? await photoGet(p.id) : null });
+  for (const p of sPins) items.push({ p, photo: p.photo ? await photoGet(p.id) : null });
   const now = new Date();
   const stamp = now.toISOString().slice(0, 10) + " " + now.toTimeString().slice(0, 5);
   const nPhoto = items.filter(i => i.photo).length;
@@ -2624,12 +2668,13 @@ async function exportReport(){
       `<div class="coord">NZTM2000&nbsp;&nbsp;${E.toFixed(1)} E&nbsp;&nbsp;${N.toFixed(1)} N</div>` +
       `</div></div>`;
   }).join("");
-  const secBlock = state.sections.length
+  const secBlock = sSecs.length
     ? `<h2>Measured items</h2><table class="sec"><thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead><tbody>` +
-      state.sections.map(s => `<tr><td>${esc(s.name)}</td><td>${s.type === "area" ? "Area" : "Line"}</td><td>${secVal(s)}</td></tr>`).join("") +
+      sSecs.map(s => `<tr><td>${esc(s.name)}</td><td>${s.type === "area" ? "Area" : "Line"}</td><td>${secVal(s)}</td></tr>`).join("") +
       `</tbody></table>` : "";
-  const planBlock = `<h2>Location plan</h2><div class="planwrap">${reportPlanSVG(items)}</div>` +
-    `<div class="cap">Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.</div>`;
+  const planBlock = `<h2>Location plan</h2><div class="planwrap">${reportPlanSVG(items, sSecs)}</div>` +
+    `<div class="cap">Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
+    (exportScope === "view" ? " Shows the current map view only." : "") + `</div>`;
   const css = `*{box-sizing:border-box}
 body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;background:#fff}
 .toolbar{position:sticky;top:0;background:#14181d;color:#e8eaed;padding:10px 16px;display:flex;gap:12px;align-items:center}
@@ -2669,7 +2714,8 @@ table.sec th{background:#f4f5f7;text-transform:uppercase;font-size:11px;letter-s
     `<header class="rpt-head"><div>${head}<div class="subtitle">${esc(REPORT.subtitle)}</div></div><div class="accentbar"></div></header>` +
     `<section class="rpt-meta"><h1>${esc(title)}</h1>` +
     `<div class="metaline">Generated ${esc(stamp)}</div>` +
-    `<div class="metaline">${nPhoto} photo${nPhoto === 1 ? "" : "s"} · ${items.length} note${items.length === 1 ? "" : "s"} · ${state.sections.length} measured item${state.sections.length === 1 ? "" : "s"}</div></section>` +
+    `<div class="metaline">${nPhoto} photo${nPhoto === 1 ? "" : "s"} · ${items.length} note${items.length === 1 ? "" : "s"} · ${sSecs.length} measured item${sSecs.length === 1 ? "" : "s"}` +
+    (exportScope === "view" ? " · this map view" : "") + `</div></section>` +
     planBlock +
     `<h2>Photo &amp; note log</h2><div class="log">${log || '<div class="cap">No notes recorded.</div>'}</div>` +
     secBlock +
