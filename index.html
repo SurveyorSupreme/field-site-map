@@ -207,8 +207,16 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 
 /* pin panel */
 #pinForm{padding:0 16px 4px}
-#pinThumb{display:block;width:84px;height:84px;object-fit:cover;border-radius:8px;
-  border:1px solid var(--line);margin-bottom:10px}
+#pinThumbs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+#pinThumbs:empty{margin-bottom:0}
+.pthumb{position:relative;width:72px;height:72px;flex:0 0 auto}
+.pthumb img{width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pthumb-del{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;
+  background:#7f1d1d;color:#fff;border:1px solid var(--bg);font-size:12px;line-height:1;
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
+#pinMoveHint{margin-bottom:10px}
+.pop-add{display:block;width:100%;margin-top:8px;background:var(--bg3);color:var(--txt);
+  border:1px solid var(--line);border-radius:6px;padding:7px;font-weight:600;cursor:pointer}
 #pinNote{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;
   color:var(--txt);padding:12px;font:15px/1.3 inherit;margin-bottom:12px;outline:none}
 #pinNote:focus{border-color:var(--accent)}
@@ -420,7 +428,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     </div>
   </div>
   <div id="pinForm" hidden>
-    <img id="pinThumb" hidden alt="">
+    <div id="pinThumbs"></div>
+    <div class="btn-row" style="padding:0 0 10px">
+      <button class="btn" id="btnAddCamera">+ Camera</button>
+      <button class="btn" id="btnAddGallery">+ Photos</button>
+    </div>
+    <div class="hint" id="pinMoveHint">Drag the pin on the map (or tap a new spot) to reposition it.</div>
     <input id="pinNote" type="text" placeholder="Note — e.g. MH lid 40 low" maxlength="120" autocomplete="off" enterkeyhint="done">
     <div class="btn-row">
       <button class="btn accent" id="pinSave">Save pin</button>
@@ -508,7 +521,7 @@ const CROSSING_DATUM = "top of pipe to top of pipe";
 // Letterhead for the printed PDF site report (Notes → PDF site report).
 // `logo` can be a data-URL (e.g. "data:image/png;base64,...") to print a real logo;
 // leave it "" to print the company name as text.
-const REPORT = { company: "Schick Group", subtitle: "Site Photo Record", logo: "" };
+const REPORT = { company: "", subtitle: "Site Photo Record", logo: "" };
 /* ============================ end of editable block ================= */
 
 if (typeof L === "undefined") {
@@ -1147,8 +1160,8 @@ map.on("popupopen", e => {
   if (state.tool){ map.closePopup(); return; }
   const el = e.popup.getElement();
   // hydrate photo thumbnails inside pin popups from IndexedDB
-  const img = el.querySelector(".pop-photo[data-pid]");
-  if (img) photoGet(+img.dataset.pid).then(src => { if (src) img.src = src; });
+  el.querySelectorAll(".pop-photo[data-pid]").forEach(img =>
+    photoGet(+img.dataset.pid).then(src => { if (src) img.src = src; }));
   // distance + bearing from the live GPS fix, so crew can relate the plan to where they stand
   const ll = e.popup.getLatLng && e.popup.getLatLng();
   const pop = el.querySelector(".pop");
@@ -1446,8 +1459,15 @@ async function hydrate(d, inline){         // draw a job blob; inline=true → p
   });
   for (const p of (d.pins || [])){
     const np = { id: p.id || Date.now(), lat: p.lat, lng: p.lng, note: p.note || "Pin",
-      ts: p.ts || "", photo: inline ? !!p.photoData : !!p.photo };
-    if (inline && p.photoData){ try { await photoPut(np.id, p.photoData); } catch (e) { np.photo = false; } }
+      ts: p.ts || "", photos: [] };
+    if (inline){
+      // job file: photos embedded as data-URLs (new: photosData[]; legacy: single photoData)
+      const datas = p.photosData || (p.photoData ? [p.photoData] : []);
+      for (const du of datas){ const pid = newPhotoId(); try { await photoPut(pid, du); np.photos.push(pid); } catch (e) {} }
+    } else {
+      // project blob: photos already in the store (new: photos[] of ids; legacy: photo bool → pin id)
+      np.photos = Array.isArray(p.photos) ? p.photos.slice() : (p.photo ? [p.id] : []);
+    }
     state.pins.push(np); drawPin(np);
   }
   (d.sections || []).forEach(s => { state.sections.push(s); drawSection(s); });
@@ -1688,10 +1708,37 @@ function downscalePhoto(file){
 }
 
 async function handlePhoto(file){
-  let coords = null;
-  try { coords = exifLatLon(await file.arrayBuffer()); } catch (e) {}
   const dataUrl = await downscalePhoto(file);
   if (!dataUrl){ toast("Could not read that image"); return; }
+  // adding to a pin that's already saved
+  if (addPhotoTarget != null){
+    const p = state.pins.find(x => x.id === addPhotoTarget);
+    addPhotoTarget = null;
+    if (p){
+      const pid = newPhotoId();
+      try {
+        await photoPut(pid, dataUrl);
+        p.photos = p.photos || [];
+        p.photos.push(pid);
+        const m = pinMarkers.get(p.id);
+        if (m){ m.setIcon(pinIcon(false, true)); m.setPopupContent(popHtml(p)); }
+        persistPins(); renderNotes();
+        toast(`Photo added — ${p.photos.length} on this pin`);
+      } catch (e) { toast("Photo could not be stored (storage full?)"); }
+    }
+    return;
+  }
+  // adding another photo to the pin currently being created
+  if (pending){
+    pending.photos.push(dataUrl);
+    pending.marker.setIcon(pinIcon(true, true));
+    renderPinThumbs();
+    toast(`Photo added (${pending.photos.length})`);
+    return;
+  }
+  // first photo → new pin, located from EXIF GPS / live fix / map tap
+  let coords = null;
+  try { coords = exifLatLon(await file.arrayBuffer()); } catch (e) {}
   if (activePanel !== "pin") setPanel("pin");
   if (coords){
     startPendingPin(L.latLng(coords[0], coords[1]), dataUrl);
@@ -1735,18 +1782,40 @@ function pinIcon(temp, photo){
 }
 const pinMarkers = new Map();
 const LSKEY = "fsm:" + PRELOADED_DATA.projectTitle;
-let pending = null;       // { marker, latlng, photo }
-let pendingPhoto = null;  // photo waiting for a map tap (no location available)
+let pending = null;       // { marker, latlng, photos: [dataUrl,...] }
+let pendingPhoto = null;  // first photo waiting for a map tap (no location available)
+let addPhotoTarget = null;// id of a saved pin we're adding a photo to
+let photoSeq = 0;
+function newPhotoId(){ return Date.now() * 1000 + (photoSeq++ % 1000); }
+function hasPhoto(p){ return p.photos && p.photos.length > 0; }
 
+function renderPinThumbs(){
+  const box = $("#pinThumbs");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!pending) return;
+  pending.photos.forEach((src, i) => {
+    const d = document.createElement("div");
+    d.className = "pthumb";
+    d.innerHTML = `<img src="${src}" alt=""><button class="pthumb-del" aria-label="Remove photo">&#10005;</button>`;
+    d.querySelector(".pthumb-del").addEventListener("click", () => {
+      pending.photos.splice(i, 1);
+      pending.marker.setIcon(pinIcon(true, pending.photos.length > 0));
+      renderPinThumbs();
+    });
+    box.appendChild(d);
+  });
+}
 function startPendingPin(ll, photo){
   if (pending){ map.removeLayer(pending.marker); pending = null; }
-  pending = { latlng: ll, photo: photo || null,
-    marker: L.marker(ll, { icon: pinIcon(true, !!photo), zIndexOffset: 900 }).addTo(map) };
+  const photos = photo ? [photo] : [];
+  pending = { latlng: ll, photos,
+    marker: L.marker(ll, { icon: pinIcon(true, photos.length > 0), zIndexOffset: 900, draggable: true }).addTo(map) };
+  pending.marker.on("dragend", () => { pending.latlng = pending.marker.getLatLng(); });
   $("#pinHint").hidden = true;
   $("#pinActions").style.display = "none";
   $("#pinForm").hidden = false;
-  const th = $("#pinThumb");
-  if (photo){ th.src = photo; th.hidden = false; } else th.hidden = true;
+  renderPinThumbs();
   if (!map.getBounds().contains(ll))
     map.flyTo(ll, Math.max(map.getZoom(), 17), { duration: 0.8 });
   setTimeout(() => $("#pinNote").focus(), 60);
@@ -1760,32 +1829,38 @@ function cancelPendingPin(){
   if (pending){ map.removeLayer(pending.marker); pending = null; }
   pendingPhoto = null;
   $("#pinForm").hidden = true;
-  $("#pinThumb").hidden = true;
+  renderPinThumbs();
   $("#pinHint").hidden = false;
   $("#pinActions").style.display = "";
   $("#pinNote").value = "";
 }
 async function savePin(){
   if (!pending) return;
-  const note = $("#pinNote").value.trim() || (pending.photo ? "Photo" : "Pin");
+  const note = $("#pinNote").value.trim() || (pending.photos.length ? "Photo" : "Pin");
   const d = new Date();
-  const p = { id: Date.now(), lat: pending.latlng.lat, lng: pending.latlng.lng, note,
-    photo: !!pending.photo,
-    ts: d.toISOString().slice(0, 10) + " " + d.toTimeString().slice(0, 5) };
-  if (pending.photo){
-    try { await photoPut(p.id, pending.photo); }
-    catch (e) { toast("Photo could not be stored (storage full?)"); p.photo = false; }
+  const photoIds = [];
+  for (const src of pending.photos){
+    const pid = newPhotoId();
+    try { await photoPut(pid, src); photoIds.push(pid); }
+    catch (e) { toast("A photo could not be stored (storage full?)"); }
   }
+  const p = { id: Date.now(), lat: pending.latlng.lat, lng: pending.latlng.lng, note,
+    photos: photoIds,
+    ts: d.toISOString().slice(0, 10) + " " + d.toTimeString().slice(0, 5) };
   state.pins.push(p);
   drawPin(p);
   persistPins();
   renderNotes();
   cancelPendingPin();
-  toast("Pin saved");
+  toast(photoIds.length > 1 ? `Pin saved (${photoIds.length} photos)` : "Pin saved");
 }
+// add a photo to a pin that's already saved (from its popup)
+window.addPhotoToPin = id => { addPhotoTarget = id; $("#photoInput").click(); };
 $("#pinSave").addEventListener("click", savePin);
 $("#pinCancel").addEventListener("click", cancelPendingPin);
 $("#pinNote").addEventListener("keydown", e => { if (e.key === "Enter") savePin(); });
+$("#btnAddCamera").addEventListener("click", () => $("#cameraInput").click());
+$("#btnAddGallery").addEventListener("click", () => $("#photoInput").click());
 $("#btnPinHere").addEventListener("click", () => {
   if (lastFix){ startPendingPin(lastFix, null); return; }
   toast("Getting GPS fix…");
@@ -1795,19 +1870,29 @@ $("#btnPinHere").addEventListener("click", () => {
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
 });
 
+function popHtml(p){
+  const imgs = (p.photos || []).map(pid => `<img class="pop-photo" data-pid="${pid}" alt="site photo">`).join("");
+  return `<div class="pop"><b>${esc(p.note)}</b><span>${p.ts}</span>` + imgs +
+    `<button class="pop-add" onclick="addPhotoToPin(${p.id})">+ Add photo</button>` +
+    `<button class="pop-del" onclick="deletePin(${p.id})">Delete pin</button></div>`;
+}
 function drawPin(p){
-  const m = L.marker([p.lat, p.lng], { icon: pinIcon(false, p.photo) }).addTo(map);
-  m.bindPopup(`<div class="pop"><b>${esc(p.note)}</b><span>${p.ts}</span>` +
-    (p.photo ? `<img class="pop-photo" data-pid="${p.id}" alt="site photo">` : "") +
-    `<button class="pop-del" onclick="deletePin(${p.id})">Delete pin</button></div>`);
+  const m = L.marker([p.lat, p.lng], { icon: pinIcon(false, hasPhoto(p)), draggable: true }).addTo(map);
+  m.on("dragend", () => {
+    p.lat = m.getLatLng().lat; p.lng = m.getLatLng().lng;
+    persistPins(); renderNotes();
+    toast("Pin moved");
+  });
+  m.bindPopup(popHtml(p));
   pinMarkers.set(p.id, m);
 }
 window.deletePin = id => {
+  const p = state.pins.find(x => x.id === id);
   const m = pinMarkers.get(id);
   if (m) map.removeLayer(m);
   pinMarkers.delete(id);
-  state.pins = state.pins.filter(p => p.id !== id);
-  photoDel(id);
+  state.pins = state.pins.filter(x => x.id !== id);
+  if (p && p.photos) p.photos.forEach(pid => photoDel(pid));
   persistPins();
   renderNotes();
   toast("Pin deleted");
@@ -1821,10 +1906,11 @@ function renderNotes(){
   state.pins.forEach(p => {
     const row = document.createElement("div");
     row.className = "note-item";
+    const extra = p.photos && p.photos.length > 1 ? ` · ${p.photos.length} photos` : "";
     row.innerHTML =
-      (p.photo ? `<img class="note-thumb" data-pid="${p.id}" alt="">`
-               : `<span class="note-ico">${ICO}</span>`) +
-      `<span class="note-txt"><b>${esc(p.note)}</b><small>${p.ts}</small></span>` +
+      (hasPhoto(p) ? `<img class="note-thumb" data-pid="${p.photos[0]}" alt="">`
+                   : `<span class="note-ico">${ICO}</span>`) +
+      `<span class="note-txt"><b>${esc(p.note)}</b><small>${p.ts}${extra}</small></span>` +
       `<button class="note-del" aria-label="Delete pin">&#10005;</button>`;
     row.addEventListener("click", e => {
       if (e.target.closest(".note-del")){ deletePin(p.id); return; }
@@ -1838,7 +1924,7 @@ function renderNotes(){
       if (m) setTimeout(() => m.openPopup(), 850);
     });
     box.appendChild(row);
-    if (p.photo) photoGet(p.id).then(src => {
+    if (hasPhoto(p)) photoGet(p.photos[0]).then(src => {
       const img = row.querySelector(".note-thumb");
       if (img && src) img.src = src;
     });
@@ -2317,8 +2403,11 @@ async function buildJobData(pinList, secList){
   const layers = state.layers.map(l => ({ name: l.name, source: l.source,
     color: l.color, visible: l.visible, feats: l.feats }));
   const pins = [];
-  for (const p of srcPins)
-    pins.push({ ...p, photoData: p.photo ? await photoGet(p.id) : null });
+  for (const p of srcPins){
+    const photosData = [];
+    for (const pid of (p.photos || [])){ const du = await photoGet(pid); if (du) photosData.push(du); }
+    pins.push({ id: p.id, lat: p.lat, lng: p.lng, note: p.note, ts: p.ts, photosData });
+  }
   return { app: "field-site-map", v: 2, project: activeName(),
     savedAt: new Date().toISOString(), layers, pins, sections: srcSecs };
 }
@@ -2381,9 +2470,9 @@ async function mergeJob(d){
   let addedPins = 0, addedPhotos = 0;
   for (const p of (d.pins || [])){
     const nid = freshId(usedP);
-    const np = { id: nid, lat: p.lat, lng: p.lng, note: p.note || "Pin", ts: p.ts || "",
-      photo: !!p.photoData };
-    if (p.photoData){ try { await photoPut(nid, p.photoData); addedPhotos++; } catch (e) { np.photo = false; } }
+    const np = { id: nid, lat: p.lat, lng: p.lng, note: p.note || "Pin", ts: p.ts || "", photos: [] };
+    const datas = p.photosData || (p.photoData ? [p.photoData] : []);
+    for (const du of datas){ const pid = newPhotoId(); try { await photoPut(pid, du); np.photos.push(pid); addedPhotos++; } catch (e) {} }
     state.pins.push(np); drawPin(np); bounds.extend([np.lat, np.lng]); addedPins++;
   }
   let addedSecs = 0;
@@ -2528,20 +2617,23 @@ async function exportZip(){
   const NZTM = PROJECTIONS[0];
   const csvQ = s => '"' + String(s).replace(/"/g, '""') + '"';
   // pins.csv — NZTM2000 coords so it drops straight into 12d
-  let csv = "﻿note,lat,lon,nztm_e,nztm_n,time,photo\r\n";
+  let csv = "﻿note,lat,lon,nztm_e,nztm_n,time,photos\r\n";
   for (const p of sPins){
     const [E, N] = tmForward(p.lat, p.lng, NZTM);
-    const photoName = p.photo ? `photos/pin-${p.id}.jpg` : "";
-    csv += `${csvQ(p.note)},${p.lat.toFixed(8)},${p.lng.toFixed(8)},${E.toFixed(2)},${N.toFixed(2)},${p.ts},${photoName}\r\n`;
-    if (p.photo){
-      const du = await photoGet(p.id);
-      if (du){
-        const bin = atob(du.split(",")[1]);
-        const u8 = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-        files.push({ name: `photos/pin-${p.id}.jpg`, data: u8 });
-      }
+    const names = [];
+    let k = 0;
+    for (const pid of (p.photos || [])){
+      const du = await photoGet(pid);
+      if (!du) continue;
+      k++;
+      const fn = `photos/pin-${p.id}-${k}.jpg`;
+      names.push(fn);
+      const bin = atob(du.split(",")[1]);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      files.push({ name: fn, data: u8 });
     }
+    csv += `${csvQ(p.note)},${p.lat.toFixed(8)},${p.lng.toFixed(8)},${E.toFixed(2)},${N.toFixed(2)},${p.ts},${csvQ(names.join("; "))}\r\n`;
   }
   files.unshift({ name: "pins.csv", data: enc.encode(csv) });
   if (sSecs.length){
@@ -2727,26 +2819,27 @@ async function exportReport(){
     return;
   }
   toast("Building report…");
-  const NZTM = PROJECTIONS[0], accent = THEME.accent, title = activeName();
+  const accent = THEME.accent, title = activeName();
   const items = [];
-  for (const p of sPins) items.push({ p, photo: p.photo ? await photoGet(p.id) : null });
+  for (const p of sPins){
+    const photos = [];
+    for (const pid of (p.photos || [])){ const du = await photoGet(pid); if (du) photos.push(du); }
+    items.push({ p, photos });
+  }
   const now = new Date();
   const stamp = now.toISOString().slice(0, 10) + " " + now.toTimeString().slice(0, 5);
-  const nPhoto = items.filter(i => i.photo).length;
+  const nPhoto = items.reduce((a, it) => a + it.photos.length, 0);
   const head = REPORT.logo
     ? `<img class="logo" src="${REPORT.logo}" alt="">`
-    : `<div class="company">${esc(REPORT.company)}</div>`;
-  const log = items.map((it, i) => {
-    const [E, N] = tmForward(it.p.lat, it.p.lng, NZTM);
-    return `<div class="item"><div class="num">${i + 1}</div>` +
-      (it.photo ? `<img class="photo" src="${it.photo}" alt="">`
-                : `<div class="photo nophoto">No photo</div>`) +
-      `<div class="detail"><div class="note">${esc(it.p.note)}</div>` +
-      `<div class="meta">${esc(it.p.ts)}</div>` +
-      `<div class="coord">${it.p.lat.toFixed(6)}, ${it.p.lng.toFixed(6)}</div>` +
-      `<div class="coord">NZTM2000&nbsp;&nbsp;${E.toFixed(1)} E&nbsp;&nbsp;${N.toFixed(1)} N</div>` +
-      `</div></div>`;
-  }).join("");
+    : (REPORT.company ? `<div class="company">${esc(REPORT.company)}</div>` : "");
+  const log = items.map((it, i) =>
+    `<div class="item"><div class="num">${i + 1}</div>` +
+    `<div class="ibody"><div class="note">${esc(it.p.note)}</div>` +
+    `<div class="meta">${esc(it.p.ts)}</div>` +
+    `<div class="photos">` +
+    (it.photos.length ? it.photos.map(s => `<img class="photo" src="${s}" alt="">`).join("")
+                      : `<div class="photo nophoto">No photo</div>`) +
+    `</div></div></div>`).join("");
   const secBlock = sSecs.length
     ? `<h2>Measured items</h2><table class="sec"><thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead><tbody>` +
       sSecs.map(s => `<tr><td>${esc(s.name)}</td><td>${s.type === "area" ? "Area" : "Line"}</td><td>${secVal(s)}</td></tr>`).join("") +
@@ -2780,12 +2873,12 @@ h2{font-size:14px;margin:20px 22px 8px;padding-bottom:5px;border-bottom:2px soli
 .log{padding:4px 22px}
 .item{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid #eceef1;page-break-inside:avoid;break-inside:avoid}
 .num{flex:0 0 26px;width:26px;height:26px;border-radius:50%;background:#e23b3b;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
-.photo{flex:0 0 auto;width:64mm;height:48mm;object-fit:cover;border-radius:6px;border:1px solid #d7dbe0;background:#f0f1f3}
-.nophoto{display:flex;align-items:center;justify-content:center;color:#9aa4b0;font-size:12px}
-.detail{flex:1;min-width:0}
+.ibody{flex:1;min-width:0}
 .note{font-weight:700;font-size:14px;margin-bottom:3px}
-.meta{font-size:12px;color:#5b6470;margin-bottom:6px}
-.coord{font-size:11.5px;color:#3a4149;font-family:ui-monospace,Consolas,monospace}
+.meta{font-size:12px;color:#5b6470;margin-bottom:8px}
+.photos{display:flex;flex-wrap:wrap;gap:8px}
+.photo{width:64mm;height:48mm;object-fit:cover;border-radius:6px;border:1px solid #d7dbe0;background:#f0f1f3}
+.nophoto{display:flex;align-items:center;justify-content:center;color:#9aa4b0;font-size:12px}
 table.sec{width:calc(100% - 44px);margin:0 22px;border-collapse:collapse;font-size:12.5px}
 table.sec th,table.sec td{text-align:left;padding:7px 10px;border-bottom:1px solid #e6e9ec}
 table.sec th{background:#f4f5f7;text-transform:uppercase;font-size:11px;letter-spacing:.5px;color:#5b6470}
@@ -2804,7 +2897,7 @@ table.sec th{background:#f4f5f7;text-transform:uppercase;font-size:11px;letter-s
     planBlock +
     `<h2>Photo &amp; note log</h2><div class="log">${log || '<div class="cap">No notes recorded.</div>'}</div>` +
     secBlock +
-    `<footer class="rpt-foot">${esc(REPORT.company)} · Field Site Map · ${esc(stamp)}</footer>` +
+    `<footer class="rpt-foot">${[REPORT.company, "Field Site Map", stamp].filter(Boolean).map(esc).join(" · ")}</footer>` +
     `<script>window.addEventListener('load',function(){setTimeout(function(){try{window.print()}catch(e){}},500)});<\/script>` +
     `</body></html>`;
   const w = window.open("", "_blank");
