@@ -65,6 +65,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
 .pop-ls{margin-top:9px;background:var(--bg3);color:var(--accent);border:1px solid var(--accent);
   border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+/* disambiguation chooser when several features sit under one tap */
+.pop-pick{margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.pop-pick-h{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+.pop-pick-i{display:block;width:100%;text-align:left;background:var(--bg3);border:1px solid var(--line);
+  border-radius:6px;padding:6px 9px;margin-bottom:5px;cursor:pointer;color:var(--txt)}
+.pop-pick-i:active{background:var(--line)}
+.pop-pick-i b{display:block;font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pop-pick-i small{display:block;color:var(--dim);font-size:11px;margin-top:1px}
 
 /* longsection — bottom sheet so the map stays visible above */
 #lsView{position:fixed;left:0;right:0;bottom:0;z-index:1400;height:62vh;
@@ -620,6 +628,62 @@ function toolForward(e){
   if (state.tool === "measure") measureAdd(e.latlng);
   else if (state.tool === "pin") pinAt(e.latlng);
 }
+// remember the last tap location so the popup can list everything under it (overlap chooser)
+let lastClickLatLng = null, lastClickT = 0;
+function recordClick(e){ lastClickLatLng = e.latlng; lastClickT = Date.now(); }
+function featureClick(e){ recordClick(e); toolForward(e); }
+function flattenLL(arr, out){
+  for (const x of arr){ Array.isArray(x) ? flattenLL(x, out) : out.push(x); }
+  return out;
+}
+function ptSegDist(p, a, b){
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if (dx === 0 && dy === 0) return p.distanceTo(a);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy);
+  t = Math.max(0, Math.min(1, t));
+  return p.distanceTo(L.point(a.x + t * dx, a.y + t * dy));
+}
+function nearLine(lls, cp, R){
+  if (!lls.length) return false;
+  const pts = lls.map(ll => map.latLngToContainerPoint(ll));
+  if (pts.length === 1) return cp.distanceTo(pts[0]) <= R;
+  for (let i = 1; i < pts.length; i++) if (ptSegDist(cp, pts[i - 1], pts[i]) <= R) return true;
+  return false;
+}
+// everything (pins, measurements, imported features) within R px of a tap
+function collectNear(latlng){
+  const R = 22;
+  const cp = map.latLngToContainerPoint(latlng);
+  const within = ll => cp.distanceTo(map.latLngToContainerPoint(ll)) <= R;
+  const box = L.latLngBounds(map.containerPointToLatLng(cp.add([R + 6, R + 6])),
+                            map.containerPointToLatLng(cp.subtract([R + 6, R + 6])));
+  const out = [];
+  for (const p of state.pins){
+    if (within(L.latLng(p.lat, p.lng))){
+      const m = pinMarkers.get(p.id);
+      out.push({ label: p.note || "Pin",
+        sub: hasPhoto(p) ? `Pin · ${p.photos.length} photo${p.photos.length > 1 ? "s" : ""}` : "Pin",
+        open: () => { if (m) m.openPopup(); } });
+    }
+  }
+  for (const s of state.sections){
+    const lyr = sectionLayers.get(s.id);
+    if (lyr && nearLine(s.latlngs.map(a => L.latLng(a[0], a[1])), cp, R))
+      out.push({ label: s.name, sub: s.type === "area" ? "Area" : "Measurement",
+        open: () => lyr.openPopup() });
+  }
+  for (const l of state.layers){
+    if (!l.visible) continue;
+    l.group.eachLayer(obj => {
+      if (out.length > 40) return;
+      let hit = false;
+      if (obj.getLatLng) hit = within(obj.getLatLng());
+      else if (obj.getBounds && box.intersects(obj.getBounds())) hit = nearLine(flattenLL(obj.getLatLngs(), []), cp, R);
+      if (hit) out.push({ label: obj._label || l.name, sub: l.name, open: () => obj.openPopup(latlng) });
+    });
+  }
+  return out;
+}
 let layerSeq = 0;
 
 /* ---------- DXF text labels: zoom-gated + viewport-culled (a 12d export can carry
@@ -683,7 +747,8 @@ function addLayer(name, feats, source, opts = {}){
     }
     obj.bindPopup(`<div class="pop"><b>${esc(f.name)}</b>` +
       `<span>${esc(name)}</span><span class="pop-rl">${zRangeText(f.zs)}</span>${lsBtn}</div>`);
-    obj.on("click", toolForward);
+    obj._label = f.name || name;
+    obj.on("click", featureClick);
     if (f.kind === "poly") obj._isPoly = true;
     group.addLayer(obj);
     f.latlngs.forEach(ll => bounds.extend(ll));
@@ -1156,6 +1221,7 @@ document.querySelectorAll(".pclose").forEach(b =>
   b.addEventListener("click", () => setPanel(activePanel)));
 
 map.on("click", e => {
+  recordClick(e);
   if (state.tool === "measure") measureAdd(e.latlng);
   else if (state.tool === "pin") pinAt(e.latlng);
 });
@@ -1179,6 +1245,25 @@ map.on("popupopen", e => {
     s.className = "pop-here";
     s.textContent = fmtDist(map.distance(lastFix, ll)) + " " + compass + " of you";
     pop.appendChild(s);
+  }
+  // overlap chooser — if several features sit under the tap, list them so the
+  // user can switch to the right one instead of being stuck with whatever was picked
+  const at = (Date.now() - lastClickT < 2000 && lastClickLatLng) ? lastClickLatLng : ll;
+  if (at && pop && !pop.querySelector(".pop-pick")){
+    const near = collectNear(at);
+    if (near.length > 1){
+      const bar = document.createElement("div");
+      bar.className = "pop-pick";
+      bar.innerHTML = `<div class="pop-pick-h">${near.length} here — tap to switch</div>`;
+      near.slice(0, 12).forEach(it => {
+        const b = document.createElement("button");
+        b.className = "pop-pick-i";
+        b.innerHTML = `<b>${esc(it.label)}</b><small>${esc(it.sub)}</small>`;
+        b.addEventListener("click", () => { map.closePopup(); it.open(); });
+        bar.appendChild(b);
+      });
+      pop.insertBefore(bar, pop.firstChild);
+    }
   }
 });
 
@@ -1284,7 +1369,7 @@ function drawSection(s){
   lyr.bindPopup(`<div class="pop"><b>${esc(s.name)}</b>` +
     `<span class="pop-rl">${secVal(s)}</span><span>${s.ts}</span>` +
     `<button class="pop-del" onclick="deleteSection(${s.id})">Delete ${area ? "area" : "section"}</button></div>`);
-  lyr.on("click", toolForward);
+  lyr.on("click", featureClick);
   lyr.addTo(map);
   sectionLayers.set(s.id, lyr);
 }
@@ -1886,6 +1971,7 @@ function drawPin(p){
     persistPins(); renderNotes();
     toast("Pin moved");
   });
+  m.on("click", recordClick);
   m.bindPopup(popHtml(p));
   pinMarkers.set(p.id, m);
 }
