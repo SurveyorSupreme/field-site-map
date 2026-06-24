@@ -41,6 +41,24 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   box-shadow:0 0 0 1px var(--accent) inset}
 .icon-btn svg{width:20px;height:20px}
 
+/* tap-select dropdown */
+#tapMenu{position:fixed;top:calc(var(--toph) + 6px);right:8px;z-index:1250;
+  background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:6px;
+  min-width:216px;box-shadow:0 12px 34px rgba(0,0,0,.55);display:none}
+#tapMenu.show{display:block}
+.tap-row{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:9px 10px;border-radius:7px;cursor:pointer}
+.tap-row:active{background:var(--bg3)}
+.tap-row span:first-child{font-size:13.5px;color:var(--txt)}
+.tap-sw{width:38px;height:22px;border-radius:11px;background:var(--bg3);border:1px solid var(--line);
+  position:relative;flex:0 0 auto;transition:.15s}
+.tap-sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:var(--dim);transition:.15s}
+.tap-row.on .tap-sw{background:var(--accent);border-color:var(--accent)}
+.tap-row.on .tap-sw::after{left:18px;background:#fff}
+.tap-sep{height:1px;background:var(--line);margin:4px 6px}
+#tapCats.dim{opacity:.4;pointer-events:none}
+
 /* ---------- map ---------- */
 #map{position:fixed;top:var(--toph);bottom:calc(var(--navh) + var(--safe));left:0;right:0;
   background:#090b0e;z-index:1}
@@ -308,6 +326,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <header id="topbar">
   <button id="projTitle" aria-label="Switch project"><span id="projName">Field Site Map</span></button>
   <div id="topBtns">
+    <button class="icon-btn" id="btnTap" aria-label="Tap select options">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V13c0 3.5-1.5 7-5.5 7H11c-1.4 0-2.3-.6-3.2-1.6L4.3 14a1.6 1.6 0 0 1 2.4-2.1L9 14"/></svg>
+    </button>
     <button class="icon-btn" id="btnImport" aria-label="Import KML or DXF">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10m0 0 4-4m-4 4-4-4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
     </button>
@@ -323,6 +344,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <div id="map"></div>
 <div id="toast"></div>
 <div id="gpsChip" hidden>GPS —</div>
+<div id="tapMenu">
+  <div class="tap-row" data-k="enabled"><span>Tap to open info</span><span class="tap-sw"></span></div>
+  <div class="tap-sep"></div>
+  <div id="tapCats">
+    <div class="tap-row" data-k="pins"><span>Pins</span><span class="tap-sw"></span></div>
+    <div class="tap-row" data-k="sections"><span>Measurements</span><span class="tap-sw"></span></div>
+    <div class="tap-row" data-k="layers"><span>Layers / linework</span><span class="tap-sw"></span></div>
+  </div>
+</div>
 <div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
 <div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
 <div id="crsModal">
@@ -632,6 +662,31 @@ function toolForward(e){
 let lastClickLatLng = null, lastClickT = 0;
 function recordClick(e){ lastClickLatLng = e.latlng; lastClickT = Date.now(); }
 function featureClick(e){ recordClick(e); toolForward(e); }
+
+/* ---------- tap-select control (what a tap opens) ----------
+   Master "Tap to open info" off = locked (taps just pan, no popups). Per-category
+   toggles let you, e.g., pick only pins + measurements and ignore CAD linework. */
+let bypassTapGate = false;   // set when WE open a popup programmatically (Notes list)
+const tapSel = { enabled: true, pins: true, sections: true, layers: true };
+try { Object.assign(tapSel, JSON.parse(localStorage.getItem("fsm:tapsel") || "{}")); } catch (e) {}
+function tapSelSave(){ try { localStorage.setItem("fsm:tapsel", JSON.stringify(tapSel)); } catch (e) {} }
+function renderTapMenu(){
+  document.querySelectorAll("#tapMenu .tap-row").forEach(r => r.classList.toggle("on", !!tapSel[r.dataset.k]));
+  const cats = $("#tapCats"); if (cats) cats.classList.toggle("dim", !tapSel.enabled);
+  const dflt = tapSel.enabled && tapSel.pins && tapSel.sections && tapSel.layers;
+  $("#btnTap").classList.toggle("on", !dflt);
+}
+document.querySelectorAll("#tapMenu .tap-row").forEach(r =>
+  r.addEventListener("click", () => { tapSel[r.dataset.k] = !tapSel[r.dataset.k]; tapSelSave(); renderTapMenu(); }));
+$("#btnTap").addEventListener("click", e => {
+  e.stopPropagation();
+  $("#tapMenu").classList.toggle("show");
+  renderTapMenu();
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest("#tapMenu") && !e.target.closest("#btnTap")) $("#tapMenu").classList.remove("show");
+});
+renderTapMenu();
 function flattenLL(arr, out){
   for (const x of arr){ Array.isArray(x) ? flattenLL(x, out) : out.push(x); }
   return out;
@@ -652,13 +707,14 @@ function nearLine(lls, cp, R){
 }
 // everything (pins, measurements, imported features) within R px of a tap
 function collectNear(latlng){
+  if (!tapSel.enabled) return [];
   const R = 22;
   const cp = map.latLngToContainerPoint(latlng);
   const within = ll => cp.distanceTo(map.latLngToContainerPoint(ll)) <= R;
   const box = L.latLngBounds(map.containerPointToLatLng(cp.add([R + 6, R + 6])),
                             map.containerPointToLatLng(cp.subtract([R + 6, R + 6])));
   const out = [];
-  for (const p of state.pins){
+  if (tapSel.pins) for (const p of state.pins){
     if (within(L.latLng(p.lat, p.lng))){
       const m = pinMarkers.get(p.id);
       out.push({ label: p.note || "Pin",
@@ -666,13 +722,13 @@ function collectNear(latlng){
         open: () => { if (m) m.openPopup(); } });
     }
   }
-  for (const s of state.sections){
+  if (tapSel.sections) for (const s of state.sections){
     const lyr = sectionLayers.get(s.id);
     if (lyr && nearLine(s.latlngs.map(a => L.latLng(a[0], a[1])), cp, R))
       out.push({ label: s.name, sub: s.type === "area" ? "Area" : "Measurement",
         open: () => lyr.openPopup() });
   }
-  for (const l of state.layers){
+  if (tapSel.layers) for (const l of state.layers){
     if (!l.visible) continue;
     l.group.eachLayer(obj => {
       if (out.length > 40) return;
@@ -748,6 +804,7 @@ function addLayer(name, feats, source, opts = {}){
     obj.bindPopup(`<div class="pop"><b>${esc(f.name)}</b>` +
       `<span>${esc(name)}</span><span class="pop-rl">${zRangeText(f.zs)}</span>${lsBtn}</div>`);
     obj._label = f.name || name;
+    obj._cat = "layers";
     obj.on("click", featureClick);
     if (f.kind === "poly") obj._isPoly = true;
     group.addLayer(obj);
@@ -1222,11 +1279,17 @@ document.querySelectorAll(".pclose").forEach(b =>
 
 map.on("click", e => {
   recordClick(e);
+  $("#tapMenu").classList.remove("show");
   if (state.tool === "measure") measureAdd(e.latlng);
   else if (state.tool === "pin") pinAt(e.latlng);
 });
 map.on("popupopen", e => {
   if (state.tool){ map.closePopup(); return; }
+  // tap-select gate: master off, or this feature's category turned off (skip for
+  // popups we open ourselves from the Notes list — those are deliberate)
+  const cat = e.popup && e.popup._source && e.popup._source._cat;
+  if (!bypassTapGate && (!tapSel.enabled || (cat && !tapSel[cat]))){ map.closePopup(); return; }
+  bypassTapGate = false;
   const el = e.popup.getElement();
   // hydrate photo thumbnails inside pin popups from IndexedDB
   el.querySelectorAll(".pop-photo[data-pid]").forEach(img =>
@@ -1369,6 +1432,7 @@ function drawSection(s){
   lyr.bindPopup(`<div class="pop"><b>${esc(s.name)}</b>` +
     `<span class="pop-rl">${secVal(s)}</span><span>${s.ts}</span>` +
     `<button class="pop-del" onclick="deleteSection(${s.id})">Delete ${area ? "area" : "section"}</button></div>`);
+  lyr._cat = "sections";
   lyr.on("click", featureClick);
   lyr.addTo(map);
   sectionLayers.set(s.id, lyr);
@@ -1971,6 +2035,7 @@ function drawPin(p){
     persistPins(); renderNotes();
     toast("Pin moved");
   });
+  m._cat = "pins";
   m.on("click", recordClick);
   m.bindPopup(popHtml(p));
   pinMarkers.set(p.id, m);
@@ -2010,7 +2075,7 @@ function renderNotes(){
       if (activePanel === "notes") setPanel("notes");
       map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 18), { duration: 0.8 });
       const m = pinMarkers.get(p.id);
-      if (m) setTimeout(() => m.openPopup(), 850);
+      if (m) setTimeout(() => { bypassTapGate = true; m.openPopup(); }, 850);
     });
     box.appendChild(row);
     if (hasPhoto(p)) photoGet(p.photos[0]).then(src => {
