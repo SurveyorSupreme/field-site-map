@@ -403,11 +403,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <section class="panel" id="panel-pin">
   <div class="panel-head"><h3>Drop pin</h3><button class="pclose" data-close>&#10005;</button></div>
   <div class="hint" id="pinHint">Tap the map to place a pin, or:</div>
-  <div class="btn-row" id="pinActions">
-    <button class="btn" id="btnPhotoPin">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/></svg>Photo pin</button>
-    <button class="btn" id="btnPinHere">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21"/></svg>My location</button>
+  <div id="pinActions">
+    <div class="btn-row" style="padding:0 0 10px">
+      <button class="btn" id="btnCamera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/></svg>Camera</button>
+      <button class="btn" id="btnGallery">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="m4 17 4.5-4.5 3 3L15 12l5 5"/></svg>Photos</button>
+    </div>
+    <div class="btn-row" style="padding:0">
+      <button class="btn" id="btnPinHere">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21"/></svg>My location</button>
+    </div>
   </div>
   <div id="pinForm" hidden>
     <img id="pinThumb" hidden alt="">
@@ -447,8 +453,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 </nav>
 
 <input type="file" id="fileInput" accept=".kml,.dxf,.json" multiple hidden>
-<!-- no capture attr: the chooser lets crew pick camera OR gallery — gallery photos
-     carry the camera app's EXIF GPS, which works even when browser GPS is blocked -->
+<!-- Camera button: capture="environment" jumps straight to the rear camera.
+     In-browser captures usually carry no EXIF GPS, so handlePhoto falls back to the
+     live GPS fix (or a map tap) for the location. -->
+<input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+<!-- Photos button: no capture attr — opens the gallery / Google Photos / Files picker.
+     Gallery photos keep the camera app's EXIF GPS, which works even when browser GPS is blocked. -->
 <input type="file" id="photoInput" accept="image/*" hidden>
 <input type="file" id="jobInput" accept=".json,application/json" hidden>
 
@@ -1624,11 +1634,14 @@ async function handlePhoto(file){
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 });
   }
 }
-$("#photoInput").addEventListener("change", e => {
+function onPhotoPick(e){
   if (e.target.files.length) handlePhoto(e.target.files[0]);
-  e.target.value = "";
-});
-$("#btnPhotoPin").addEventListener("click", () => $("#photoInput").click());
+  e.target.value = "";                       // reset so picking the same file again still fires
+}
+$("#photoInput").addEventListener("change", onPhotoPick);   // gallery / Google Photos / files
+$("#cameraInput").addEventListener("change", onPhotoPick);  // straight to camera
+$("#btnGallery").addEventListener("click", () => $("#photoInput").click());
+$("#btnCamera").addEventListener("click", () => $("#cameraInput").click());
 
 /* ---------- pins + notes ---------- */
 function pinSvg(){
