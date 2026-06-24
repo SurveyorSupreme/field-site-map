@@ -59,6 +59,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .tap-sep{height:1px;background:var(--line);margin:4px 6px}
 #tapCats.dim{opacity:.4;pointer-events:none}
 
+/* import/export (Files) dropdown */
+#fileMenu{position:fixed;top:calc(var(--toph) + 6px);right:8px;z-index:1250;
+  background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px;
+  min-width:250px;max-width:88vw;box-shadow:0 12px 34px rgba(0,0,0,.55);display:none}
+#fileMenu.show{display:block}
+#fileMenu .btn{margin-bottom:8px}
+#fileMenu .btn:last-child{margin-bottom:0}
+.fm-h{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin:2px 2px 7px}
+
 /* ---------- map ---------- */
 #map{position:fixed;top:var(--toph);bottom:calc(var(--navh) + var(--safe));left:0;right:0;
   background:#090b0e;z-index:1}
@@ -329,8 +338,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <button class="icon-btn" id="btnTap" aria-label="Tap select options">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V13c0 3.5-1.5 7-5.5 7H11c-1.4 0-2.3-.6-3.2-1.6L4.3 14a1.6 1.6 0 0 1 2.4-2.1L9 14"/></svg>
     </button>
-    <button class="icon-btn" id="btnImport" aria-label="Import KML or DXF">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10m0 0 4-4m-4 4-4-4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+    <button class="icon-btn" id="btnImport" aria-label="Import and export">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4v9m0 0-3-3m3 3 3-3"/><path d="M16 20v-9m0 0-3 3m3-3 3 3"/></svg>
     </button>
     <button class="icon-btn" id="btnBase" aria-label="Switch basemap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.6 4 5.7 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.7-4-9s1.3-6.4 4-9z"/></svg>
@@ -354,6 +363,24 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   </div>
   <div class="tap-sep"></div>
   <div class="tap-row" data-k="dragPins"><span>Move pins (drag)</span><span class="tap-sw"></span></div>
+</div>
+<div id="fileMenu">
+  <div class="fm-h">Import</div>
+  <button class="btn" id="btnImport2">Import KML / DXF / job file…</button>
+  <div class="tap-sep"></div>
+  <div class="fm-h">This project</div>
+  <button class="btn" id="btnSaveJob">Save job file (full backup)</button>
+  <div class="tap-sep"></div>
+  <div class="fm-h">Export</div>
+  <div class="seg" id="expScope" style="padding:0 0 8px">
+    <button data-scope="all" class="on">Whole project</button>
+    <button data-scope="view">This map view</button>
+  </div>
+  <div class="tap-row" id="optLabels" style="padding:6px 2px 6px"><span>Plan labels (names)</span><span class="tap-sw"></span></div>
+  <div id="expHint" style="font-size:11.5px;color:var(--dim);padding:2px 2px 10px"></div>
+  <button class="btn accent" id="btnReport">PDF site report</button>
+  <button class="btn" id="btnExportJson">Pins + measurements (.json)</button>
+  <button class="btn" id="btnExport">Data — CSV + KML + photos (zip)</button>
 </div>
 <div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
 <div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
@@ -418,14 +445,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <button data-base="2">Topo</button>
   </div>
   <div class="panel-body" id="layerList">
-    <div class="empty">No layers yet — import a KML or DXF, or drag one onto the map.</div>
-  </div>
-  <div class="panel-foot">
-    <button class="btn" id="btnImport2">+ Import KML / DXF</button>
-    <div class="btn-row" style="padding:10px 0 0">
-      <button class="btn" id="btnSaveJob">Save job file</button>
-      <button class="btn" id="btnLoadJob">Load job file</button>
-    </div>
+    <div class="empty">No layers yet — import from the top-bar import/export button, or drag a KML/DXF onto the map.</div>
   </div>
 </section>
 
@@ -486,20 +506,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <section class="panel" id="panel-notes">
   <div class="panel-head"><h3>Notes</h3><button class="pclose" data-close>&#10005;</button></div>
   <div class="panel-body" id="noteList"><div class="empty">No pins yet.</div></div>
-  <div class="panel-foot">
-    <div class="seg" id="expScope" style="padding:0 0 6px">
-      <button data-scope="all" class="on">Whole project</button>
-      <button data-scope="view">This map view</button>
-    </div>
-    <div id="expHint" style="font-size:11.5px;color:var(--dim);padding:0 2px 10px"></div>
-    <button class="btn accent" id="btnReport">PDF site report</button>
-    <div class="btn-row" style="padding:10px 0 0">
-      <button class="btn" id="btnExportJson">Export pins + measurements (.json)</button>
-    </div>
-    <div class="btn-row" style="padding:8px 0 0">
-      <button class="btn" id="btnExport">Export data — CSV + KML + photos (zip)</button>
-    </div>
-  </div>
+  <div class="panel-foot"><div class="hint" style="padding:0 2px">Export options are in the top-bar import/export button.</div></div>
 </section>
 
 <!-- ============ bottom nav ============ -->
@@ -530,7 +537,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 <!-- Photos button: no capture attr — opens the gallery / Google Photos / Files picker.
      Gallery photos keep the camera app's EXIF GPS, which works even when browser GPS is blocked. -->
 <input type="file" id="photoInput" accept="image/*" hidden>
-<input type="file" id="jobInput" accept=".json,application/json" hidden>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -690,6 +696,7 @@ document.querySelectorAll("#tapMenu .tap-row").forEach(r =>
   }));
 $("#btnTap").addEventListener("click", e => {
   e.stopPropagation();
+  $("#fileMenu").classList.remove("show");
   $("#tapMenu").classList.toggle("show");
   renderTapMenu();
 });
@@ -1251,8 +1258,21 @@ $("#fileInput").addEventListener("change", e => {
   handleFiles(e.target.files);
   e.target.value = "";
 });
-$("#btnImport").addEventListener("click", () => $("#fileInput").click());
+// top-bar button now opens the import/export (Files) menu; the menu's Import item
+// (btnImport2) triggers the actual file picker
+$("#btnImport").addEventListener("click", e => {
+  e.stopPropagation();
+  $("#tapMenu").classList.remove("show");
+  const show = $("#fileMenu").classList.toggle("show");
+  if (show && typeof renderFileMenu === "function") renderFileMenu();
+});
 $("#btnImport2").addEventListener("click", () => $("#fileInput").click());
+// close the Files menu after any action button; close on outside click / map tap
+["btnImport2", "btnSaveJob", "btnReport", "btnExportJson", "btnExport"].forEach(id =>
+  $("#" + id).addEventListener("click", () => $("#fileMenu").classList.remove("show")));
+document.addEventListener("click", e => {
+  if (!e.target.closest("#fileMenu") && !e.target.closest("#btnImport")) $("#fileMenu").classList.remove("show");
+});
 
 window.addEventListener("dragover", e => {
   e.preventDefault();
@@ -1290,6 +1310,7 @@ document.querySelectorAll(".pclose").forEach(b =>
 map.on("click", e => {
   recordClick(e);
   $("#tapMenu").classList.remove("show");
+  $("#fileMenu").classList.remove("show");
   if (state.tool === "measure") measureAdd(e.latlng);
   else if (state.tool === "pin") pinAt(e.latlng);
 });
@@ -2668,15 +2689,7 @@ $("#loadModal").addEventListener("click", e => {
   if (e.target === $("#loadModal")){ pendingJob = null; $("#loadModal").classList.remove("show"); }
 });
 $("#btnSaveJob").addEventListener("click", saveJob);
-$("#btnLoadJob").addEventListener("click", () => $("#jobInput").click());
-$("#jobInput").addEventListener("change", e => {
-  if (e.target.files.length){
-    const r = new FileReader();
-    r.onload = () => loadJob(r.result);
-    r.readAsText(e.target.files[0]);
-  }
-  e.target.value = "";
-});
+// (Load job file is now folded into Import — a .json picked there routes to loadJob)
 
 /* ---------- export zip (CSV with NZTM coords + KML + photos + job backup) ---------- */
 const CRC_TABLE = (() => {
@@ -2768,7 +2781,20 @@ $("#expScope").querySelectorAll("button").forEach(b =>
     $("#expScope").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
     updateExpHint();
   }));
-map.on("moveend zoomend", () => { if (activePanel === "notes") updateExpHint(); });
+map.on("moveend zoomend", () => { if ($("#fileMenu").classList.contains("show")) updateExpHint(); });
+
+// include DXF text labels (lot / road names) on the PDF plan — persisted option
+let reportLabels = localStorage.getItem("fsm:reportLabels") === "1";
+$("#optLabels").addEventListener("click", () => {
+  reportLabels = !reportLabels;
+  localStorage.setItem("fsm:reportLabels", reportLabels ? "1" : "0");
+  $("#optLabels").classList.toggle("on", reportLabels);
+});
+function renderFileMenu(){       // reflect current settings when the menu opens
+  $("#expScope").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.scope === exportScope));
+  $("#optLabels").classList.toggle("on", reportLabels);
+  updateExpHint();
+}
 
 async function exportZip(){
   const { pins: sPins, sections: sSecs } = scopedData();
@@ -3011,6 +3037,20 @@ async function captureMapImage(bounds, items, sections, CW, CH){
       }
     });
   });
+  // DXF text labels (lot / road names) — optional, only for visible layers, capped
+  if (reportLabels && dxfLabels.length){
+    const visIds = new Set(state.layers.filter(l => l.visible).map(l => l.id));
+    ctx.font = "11px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    let n = 0;
+    for (const lab of dxfLabels){
+      if (n > 500) break;
+      if (!visIds.has(lab.layerId) || !capB.contains([lab.lat, lab.lng])) continue;
+      const [X, Y] = px(lab.lat, lab.lng);
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.92)"; ctx.strokeText(lab.text, X + 2, Y);
+      ctx.fillStyle = "#111"; ctx.fillText(lab.text, X + 2, Y);
+      n++;
+    }
+  }
   sections.forEach(sec => {
     ctx.beginPath();
     sec.latlngs.forEach((ll, i) => { const [X, Y] = px(ll[0], ll[1]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
