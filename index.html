@@ -2937,6 +2937,16 @@ const TILE_LBL = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference
 const wX = (lng, z) => (lng + 180) / 360 * 256 * Math.pow(2, z);
 const wY = (lat, z) => { const s = Math.sin(lat * Math.PI / 180);
   return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * Math.pow(2, z); };
+const wLng = (x, z) => x / (256 * Math.pow(2, z)) * 360 - 180;
+const wLat = (y, z) => { const n = Math.PI - 2 * Math.PI * y / (256 * Math.pow(2, z));
+  return 180 / Math.PI * Math.atan(Math.sinh(n)); };
+// walk a Leaflet getLatLngs() result (line = flat ring; polygon/multi = nested) and
+// call cb with each flat ring of {lat,lng}
+function eachRing(lls, cb){
+  if (!lls || !lls.length) return;
+  if (lls[0] && lls[0].lat !== undefined){ cb(lls); return; }
+  lls.forEach(sub => eachRing(sub, cb));
+}
 function loadTile(url){
   return new Promise(res => {
     const img = new Image();
@@ -2971,7 +2981,36 @@ async function captureMapImage(bounds, items, sections, CW, CH){
     await Promise.all(jobs);
   }
   const px = (lat, lng) => [wX(lng, z) - tlx, wY(lat, z) - tly];
-  ctx.lineJoin = "round";
+  ctx.lineJoin = "round"; ctx.lineCap = "round";
+  // imported KML/DXF layers (services linework, points) in their own colours, under the pins/measurements
+  const capB = L.latLngBounds(L.latLng(wLat(tly + CH, z), wLng(tlx, z)),
+                             L.latLng(wLat(tly, z), wLng(tlx + CW, z)));
+  state.layers.forEach(l => {
+    if (!l.visible) return;
+    l.group.eachLayer(obj => {
+      const o = obj.options || {};
+      if (obj.getLatLng){                                  // point feature
+        const ll = obj.getLatLng();
+        if (!capB.contains(ll)) return;
+        const [X, Y] = px(ll.lat, ll.lng);
+        ctx.beginPath(); ctx.arc(X, Y, Math.max(2.5, o.radius || 4), 0, 2 * Math.PI);
+        ctx.fillStyle = o.fillColor || o.color || "#888"; ctx.fill();
+        ctx.lineWidth = 1; ctx.strokeStyle = "rgba(0,0,0,.45)"; ctx.stroke();
+      } else if (obj.getLatLngs){                           // line / polygon
+        if (obj.getBounds && !capB.intersects(obj.getBounds())) return;
+        const poly = !!obj._isPoly;
+        eachRing(obj.getLatLngs(), ring => {
+          if (ring.length < 2) return;
+          ctx.beginPath();
+          ring.forEach((p, i) => { const [X, Y] = px(p.lat, p.lng); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+          if (poly){ ctx.closePath(); ctx.save(); ctx.globalAlpha = 0.16;
+            ctx.fillStyle = o.fillColor || o.color || "#888"; ctx.fill(); ctx.restore(); }
+          ctx.lineWidth = Math.max(1, o.weight || 1.3);
+          ctx.strokeStyle = o.color || o.fillColor || "#888"; ctx.stroke();
+        });
+      }
+    });
+  });
   sections.forEach(sec => {
     ctx.beginPath();
     sec.latlngs.forEach((ll, i) => { const [X, Y] = px(ll[0], ll[1]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
