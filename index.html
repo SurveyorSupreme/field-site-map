@@ -2640,6 +2640,85 @@ function reportPlanSVG(items, sections){
     `<text x="${bx}" y="${by - 4}" font-size="11" fill="#222">${tM} m</text>`;
   return svg + "</svg>";
 }
+function reportBounds(items, sections){
+  const b = L.latLngBounds([]);
+  items.forEach(it => b.extend([it.p.lat, it.p.lng]));
+  sections.forEach(s => s.latlngs.forEach(ll => b.extend(ll)));
+  if (b.isValid()) return b.pad(0.25);
+  return b;
+}
+/* Composite the real aerial (+ place labels) for `bounds` onto a canvas and
+   overlay numbered pins / sections, returning a JPEG data-URL. Esri tiles are
+   CORS-enabled so the canvas isn't tainted; if a tile fails or export is
+   blocked (offline), returns null and the caller falls back to the schematic. */
+const TILE_IMG = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+const TILE_LBL = "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
+const wX = (lng, z) => (lng + 180) / 360 * 256 * Math.pow(2, z);
+const wY = (lat, z) => { const s = Math.sin(lat * Math.PI / 180);
+  return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * 256 * Math.pow(2, z); };
+function loadTile(url){
+  return new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = url;
+  });
+}
+async function captureMapImage(bounds, items, sections, CW, CH){
+  const w = bounds.getWest(), e = bounds.getEast(), n = bounds.getNorth(), s = bounds.getSouth();
+  let z = 19;
+  for (; z > 2; z--){
+    if (Math.abs(wX(e, z) - wX(w, z)) <= CW && Math.abs(wY(s, z) - wY(n, z)) <= CH) break;
+  }
+  const cLng = (w + e) / 2, cLat = (s + n) / 2, N = Math.pow(2, z);
+  const tlx = wX(cLng, z) - CW / 2, tly = wY(cLat, z) - CH / 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = CW; canvas.height = CH;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#dfe3e7"; ctx.fillRect(0, 0, CW, CH);
+  const x0 = Math.floor(tlx / 256), x1 = Math.floor((tlx + CW) / 256);
+  const y0 = Math.floor(tly / 256), y1 = Math.floor((tly + CH) / 256);
+  for (const tmpl of [TILE_IMG, TILE_LBL]){          // imagery first, place labels on top
+    const jobs = [];
+    for (let tx = x0; tx <= x1; tx++) for (let ty = y0; ty <= y1; ty++){
+      if (ty < 0 || ty >= N) continue;
+      const wx = ((tx % N) + N) % N;
+      jobs.push(loadTile(tmpl.replace("{z}", z).replace("{x}", wx).replace("{y}", ty))
+        .then(img => { if (img){ try { ctx.drawImage(img, tx * 256 - tlx, ty * 256 - tly); } catch (e) {} } }));
+    }
+    await Promise.all(jobs);
+  }
+  const px = (lat, lng) => [wX(lng, z) - tlx, wY(lat, z) - tly];
+  ctx.lineJoin = "round";
+  sections.forEach(sec => {
+    ctx.beginPath();
+    sec.latlngs.forEach((ll, i) => { const [X, Y] = px(ll[0], ll[1]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+    if (sec.type === "area"){ ctx.closePath(); ctx.fillStyle = "rgba(74,222,128,.25)"; ctx.fill(); }
+    ctx.lineWidth = 3; ctx.strokeStyle = "#1f7a3f"; ctx.stroke();
+  });
+  items.forEach((it, i) => {
+    const [X, Y] = px(it.p.lat, it.p.lng);
+    ctx.beginPath(); ctx.arc(X, Y, 13, 0, 2 * Math.PI);
+    ctx.fillStyle = "#e23b3b"; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.font = "bold 15px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(i + 1), X, Y + 1);
+  });
+  const halo = (txt, x, y) => { ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.strokeText(txt, x, y);
+    ctx.fillStyle = "#111"; ctx.fillText(txt, x, y); };
+  const res = 2 * Math.PI * 6378137 * Math.cos(cLat * Math.PI / 180) / (256 * N);
+  const tgt = niceMetres(CW * 0.25 * res), barPx = tgt / res;
+  ctx.fillStyle = "#fff"; ctx.fillRect(18, CH - 30, barPx + 4, 14);
+  ctx.fillStyle = "#111"; ctx.fillRect(20, CH - 24, barPx, 5);
+  ctx.font = "bold 13px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  halo(tgt + " m", 20 + barPx + 8, CH - 19);
+  ctx.save(); ctx.translate(CW - 30, 30);
+  ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(6, 8); ctx.lineTo(0, 3); ctx.lineTo(-6, 8); ctx.closePath();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = "#111"; ctx.fill();
+  ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top"; halo("N", 0, 10);
+  ctx.restore();
+  try { return canvas.toDataURL("image/jpeg", 0.85); } catch (e) { return null; }
+}
 async function exportReport(){
   const { pins: sPins, sections: sSecs } = scopedData();
   if (!sPins.length && !sSecs.length){
@@ -2672,8 +2751,14 @@ async function exportReport(){
     ? `<h2>Measured items</h2><table class="sec"><thead><tr><th>Name</th><th>Type</th><th>Value</th></tr></thead><tbody>` +
       sSecs.map(s => `<tr><td>${esc(s.name)}</td><td>${s.type === "area" ? "Area" : "Line"}</td><td>${secVal(s)}</td></tr>`).join("") +
       `</tbody></table>` : "";
-  const planBlock = `<h2>Location plan</h2><div class="planwrap">${reportPlanSVG(items, sSecs)}</div>` +
-    `<div class="cap">Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
+  toast("Capturing map…");
+  let pBounds = (exportScope === "view") ? map.getBounds() : reportBounds(items, sSecs);
+  if (!pBounds || !pBounds.isValid()) pBounds = map.getBounds();
+  let planImg = null;
+  try { planImg = await captureMapImage(pBounds, items, sSecs, 1100, 622); } catch (e) { planImg = null; }
+  const planInner = planImg ? `<img class="plan" src="${planImg}" alt="">` : reportPlanSVG(items, sSecs);
+  const planBlock = `<h2>Location plan</h2><div class="planwrap">${planInner}</div>` +
+    `<div class="cap">${planImg ? "Aerial basemap © Esri. " : ""}Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
     (exportScope === "view" ? " Shows the current map view only." : "") + `</div>`;
   const css = `*{box-sizing:border-box}
 body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;background:#fff}
