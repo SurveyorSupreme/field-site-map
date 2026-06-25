@@ -377,6 +377,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <button data-scope="view">This map view</button>
   </div>
   <div class="tap-row" id="optLabels" style="padding:6px 2px 6px"><span>Plan labels (names)</span><span class="tap-sw"></span></div>
+  <div style="padding:5px 2px 2px;font-size:11.5px;color:var(--dim)">Pin size on plan</div>
+  <div class="seg" id="pinSizeSeg" style="padding:0 0 8px">
+    <button data-ps="8">S</button>
+    <button data-ps="13" class="on">M</button>
+    <button data-ps="19">L</button>
+  </div>
   <div id="expHint" style="font-size:11.5px;color:var(--dim);padding:2px 2px 10px"></div>
   <button class="btn accent" id="btnReport">PDF site report</button>
   <button class="btn" id="btnExportJson">Pins + measurements (.json)</button>
@@ -2790,9 +2796,16 @@ $("#optLabels").addEventListener("click", () => {
   localStorage.setItem("fsm:reportLabels", reportLabels ? "1" : "0");
   $("#optLabels").classList.toggle("on", reportLabels);
 });
+let exportPinSize = 13;
+document.querySelectorAll("#pinSizeSeg button").forEach(b =>
+  b.addEventListener("click", () => {
+    exportPinSize = +b.dataset.ps;
+    document.querySelectorAll("#pinSizeSeg button").forEach(x => x.classList.toggle("on", x === b));
+  }));
 function renderFileMenu(){       // reflect current settings when the menu opens
   $("#expScope").querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.scope === exportScope));
   $("#optLabels").classList.toggle("on", reportLabels);
+  document.querySelectorAll("#pinSizeSeg button").forEach(x => x.classList.toggle("on", +x.dataset.ps === exportPinSize));
   updateExpHint();
 }
 
@@ -2937,8 +2950,9 @@ function reportPlanSVG(items, sections){
   });
   items.forEach((it, i) => {
     const cx = X(it.p.lng).toFixed(1), cy = Y(it.p.lat).toFixed(1);
-    svg += `<circle cx="${cx}" cy="${cy}" r="11" fill="#e23b3b" stroke="#fff" stroke-width="1.6"/>` +
-      `<text x="${cx}" y="${cy}" text-anchor="middle" dy="3.7" font-size="11" font-weight="700" fill="#fff">${i + 1}</text>`;
+    const svgR = Math.round(exportPinSize * 0.85);
+    svg += `<circle cx="${cx}" cy="${cy}" r="${svgR}" fill="#e23b3b" stroke="#fff" stroke-width="1.6"/>` +
+      `<text x="${cx}" y="${cy}" text-anchor="middle" dy="${(svgR * 0.34).toFixed(1)}" font-size="${svgR}" font-weight="700" fill="#fff">${i + 1}</text>`;
   });
   svg += `<g transform="translate(${W - 34},34)"><polygon points="0,-16 6,8 0,3 -6,8" fill="#222"/>` +
     `<text x="0" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#222">N</text></g>`;
@@ -3059,9 +3073,9 @@ async function captureMapImage(bounds, items, sections, CW, CH){
   });
   items.forEach((it, i) => {
     const [X, Y] = px(it.p.lat, it.p.lng);
-    ctx.beginPath(); ctx.arc(X, Y, 13, 0, 2 * Math.PI);
+    ctx.beginPath(); ctx.arc(X, Y, exportPinSize, 0, 2 * Math.PI);
     ctx.fillStyle = "#e23b3b"; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke();
-    ctx.fillStyle = "#fff"; ctx.font = "bold 15px sans-serif";
+    ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(exportPinSize * 1.15)}px sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(i + 1), X, Y + 1);
   });
   const halo = (txt, x, y) => { ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.strokeText(txt, x, y);
