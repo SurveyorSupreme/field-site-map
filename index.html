@@ -3071,12 +3071,32 @@ async function captureMapImage(bounds, items, sections, CW, CH){
     if (sec.type === "area"){ ctx.closePath(); ctx.fillStyle = "rgba(74,222,128,.25)"; ctx.fill(); }
     ctx.lineWidth = 3; ctx.strokeStyle = "#1f7a3f"; ctx.stroke();
   });
-  items.forEach((it, i) => {
-    const [X, Y] = px(it.p.lat, it.p.lng);
-    ctx.beginPath(); ctx.arc(X, Y, exportPinSize, 0, 2 * Math.PI);
+  // pins — declutter so stacked pins (same intersection) fan out on leader lines back to true point
+  const pts = items.map((it, i) => { const [x, y] = px(it.p.lat, it.p.lng); return { x, y, x0: x, y0: y, i }; });
+  const sep = exportPinSize * 2.25;
+  for (let k = 0; k < 80; k++){
+    for (let a = 0; a < pts.length; a++) for (let b = a + 1; b < pts.length; b++){
+      let dx = pts[b].x - pts[a].x, dy = pts[b].y - pts[a].y, d = Math.hypot(dx, dy);
+      if (d < 0.01){ dx = ((a - b) % 2 ? 1 : -1); dy = 0.6; d = Math.hypot(dx, dy); }  // exact overlap → nudge apart
+      if (d < sep){ const push = (sep - d) / 2, ux = dx / d, uy = dy / d;
+        pts[a].x -= ux * push; pts[a].y -= uy * push; pts[b].x += ux * push; pts[b].y += uy * push; }
+    }
+    for (const p of pts){ p.x += (p.x0 - p.x) * 0.05; p.y += (p.y0 - p.y) * 0.05; }  // gentle tug back toward true point
+  }
+  pts.forEach(p => {                                   // leader line + true-location dot for any pin that moved
+    if (Math.hypot(p.x - p.x0, p.y - p.y0) > exportPinSize * 0.7){
+      ctx.beginPath(); ctx.moveTo(p.x0, p.y0); ctx.lineTo(p.x, p.y);
+      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.stroke();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = "rgba(40,40,40,.7)"; ctx.stroke();
+      ctx.beginPath(); ctx.arc(p.x0, p.y0, 3, 0, 2 * Math.PI);
+      ctx.fillStyle = "#e23b3b"; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = "#fff"; ctx.stroke();
+    }
+  });
+  pts.forEach(p => {                                   // numbered badges on top
+    ctx.beginPath(); ctx.arc(p.x, p.y, exportPinSize, 0, 2 * Math.PI);
     ctx.fillStyle = "#e23b3b"; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(exportPinSize * 1.15)}px sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(i + 1), X, Y + 1);
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(p.i + 1), p.x, p.y + 1);
   });
   const halo = (txt, x, y) => { ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.strokeText(txt, x, y);
     ctx.fillStyle = "#111"; ctx.fillText(txt, x, y); };
@@ -3132,10 +3152,10 @@ async function exportReport(){
   let planImg = null;
   try { planImg = await captureMapImage(pBounds, items, sSecs, 1800, 1020); } catch (e) { planImg = null; }
   const planInner = planImg
-    ? `<img class="plan" src="${planImg}" alt="" title="Click to open full size" onclick="window.open(this.src,'_blank')">`
+    ? `<img class="plan" src="${planImg}" alt="" title="Tap to zoom" onclick="openLB(this.src)">`
     : reportPlanSVG(items, sSecs);
   const planBlock = `<h2>Location plan</h2><div class="planwrap">${planInner}</div>` +
-    `<div class="cap">${planImg ? "Aerial basemap © Esri. Click plan to open full size. " : ""}Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
+    `<div class="cap">${planImg ? "Aerial basemap © Esri. Tap plan to zoom. " : ""}Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
     (exportScope === "view" ? " Shows the current map view only." : "") + `</div>`;
   const css = `*{box-sizing:border-box}
 body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;background:#fff}
@@ -3153,7 +3173,10 @@ body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-s
 h2{font-size:14px;margin:20px 22px 8px;padding-bottom:5px;border-bottom:2px solid #e6e9ec;text-transform:uppercase;letter-spacing:1px;color:#3a4149}
 .planwrap{padding:0 22px}
 .plan{width:100%;height:auto;border-radius:6px;cursor:zoom-in}
-@media print{.plan{cursor:default}}
+#lb{display:none;position:fixed;inset:0;background:#0a0c0e;z-index:9999;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y pinch-zoom}
+#lb img{display:block;min-width:100%;width:auto;height:auto}
+#lbx{position:fixed;top:10px;right:12px;z-index:10000;background:#e23b3b;color:#fff;border:0;border-radius:8px;padding:9px 15px;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+@media print{.plan{cursor:default}#lb{display:none!important}}
 .cap{padding:4px 22px 0;font-size:11px;color:#8a929c;font-style:italic}
 .log{padding:4px 22px}
 .item{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid #eceef1;page-break-inside:avoid;break-inside:avoid}
@@ -3183,6 +3206,8 @@ table.sec th{background:#f4f5f7;text-transform:uppercase;font-size:11px;letter-s
     `<h2>Photo &amp; note log</h2><div class="log">${log || '<div class="cap">No notes recorded.</div>'}</div>` +
     secBlock +
     `<footer class="rpt-foot">${[REPORT.company, "Field Site Map", stamp].filter(Boolean).map(esc).join(" · ")}</footer>` +
+    `<div id="lb"><button id="lbx" onclick="closeLB()">✕ Close</button><img id="lbimg" alt=""></div>` +
+    `<script>function openLB(s){var b=document.getElementById('lb');document.getElementById('lbimg').src=s;b.style.display='block';b.scrollTop=0;document.body.style.overflow='hidden';}function closeLB(){document.getElementById('lb').style.display='none';document.body.style.overflow='';}document.addEventListener('keydown',function(e){if(e.key==='Escape')closeLB();});<\/script>` +
     `<script>window.addEventListener('load',function(){setTimeout(function(){try{window.print()}catch(e){}},500)});<\/script>` +
     `</body></html>`;
   const w = window.open("", "_blank");
