@@ -3130,10 +3130,12 @@ async function exportReport(){
   let pBounds = (exportScope === "view") ? map.getBounds() : reportBounds(items, sSecs);
   if (!pBounds || !pBounds.isValid()) pBounds = map.getBounds();
   let planImg = null;
-  try { planImg = await captureMapImage(pBounds, items, sSecs, 1100, 622); } catch (e) { planImg = null; }
-  const planInner = planImg ? `<img class="plan" src="${planImg}" alt="">` : reportPlanSVG(items, sSecs);
+  try { planImg = await captureMapImage(pBounds, items, sSecs, 1800, 1020); } catch (e) { planImg = null; }
+  const planInner = planImg
+    ? `<img class="plan" src="${planImg}" alt="" title="Click to open full size" onclick="window.open(this.src,'_blank')">`
+    : reportPlanSVG(items, sSecs);
   const planBlock = `<h2>Location plan</h2><div class="planwrap">${planInner}</div>` +
-    `<div class="cap">${planImg ? "Aerial basemap © Esri. " : ""}Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
+    `<div class="cap">${planImg ? "Aerial basemap © Esri. Click plan to open full size. " : ""}Indicative plan — positions from GPS / imported data, north up. Not to survey accuracy.` +
     (exportScope === "view" ? " Shows the current map view only." : "") + `</div>`;
   const css = `*{box-sizing:border-box}
 body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;background:#fff}
@@ -3150,7 +3152,8 @@ body{margin:0;font:13px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-s
 .metaline{font-size:12px;color:#5b6470}
 h2{font-size:14px;margin:20px 22px 8px;padding-bottom:5px;border-bottom:2px solid #e6e9ec;text-transform:uppercase;letter-spacing:1px;color:#3a4149}
 .planwrap{padding:0 22px}
-.plan{width:100%;height:auto;border-radius:6px}
+.plan{width:100%;height:auto;border-radius:6px;cursor:zoom-in}
+@media print{.plan{cursor:default}}
 .cap{padding:4px 22px 0;font-size:11px;color:#8a929c;font-style:italic}
 .log{padding:4px 22px}
 .item{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid #eceef1;page-break-inside:avoid;break-inside:avoid}
