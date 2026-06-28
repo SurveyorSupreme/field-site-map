@@ -86,8 +86,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .pop b{display:block;font-size:14px;margin-bottom:2px}
 .pop span{display:block;color:var(--dim);font-size:12px;margin-top:2px}
 .pop .pop-rl{color:var(--accent);font-weight:600}
-.pop-photo{display:block;width:200px;max-width:58vw;border-radius:6px;margin-top:8px;
-  cursor:pointer;border:1px solid var(--line)}
+.pop-thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;width:216px;max-width:62vw}
+.pop-photo{width:66px;height:66px;object-fit:cover;border-radius:6px;
+  cursor:pointer;border:1px solid var(--line);background:var(--bg3);flex:0 0 auto}
 .pop-del{margin-top:9px;background:#43181c;color:#fda4af;border:1px solid #7f1d1d;
   border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
 .pop-ls{margin-top:9px;background:var(--bg3);color:var(--accent);border:1px solid var(--accent);
@@ -2065,7 +2066,11 @@ $("#btnPinHere").addEventListener("click", () => {
 });
 
 function popHtml(p){
-  const imgs = (p.photos || []).map(pid => `<img class="pop-photo" data-pid="${pid}" alt="site photo">`).join("");
+  const imgs = (p.photos || []).length
+    ? `<div class="pop-thumbs">` +
+      (p.photos || []).map(pid => `<img class="pop-photo" data-pid="${pid}" alt="site photo">`).join("") +
+      `</div>`
+    : "";
   return `<div class="pop"><b>${esc(p.note)}</b><span>${p.ts}</span>` + imgs +
     `<button class="pop-add" onclick="addPhotoToPin(${p.id})">+ Add photo</button>` +
     `<button class="pop-del" onclick="deletePin(${p.id})">Delete pin</button></div>`;
@@ -2667,7 +2672,8 @@ window.addEventListener("resize", () => {
 });
 document.addEventListener("click", e => {
   if (e.target.classList && e.target.classList.contains("pop-photo") && e.target.src){
-    const pin = state.pins.find(p => p.id === +e.target.dataset.pid);
+    const pid = +e.target.dataset.pid;
+    const pin = state.pins.find(p => (p.photos || []).includes(pid));
     openViewer(e.target.src, pin && pin.note, pin && pin.ts);
   } else if (e.target.classList && e.target.classList.contains("pop-ls")){
     openLongsection(+e.target.dataset.fid);
