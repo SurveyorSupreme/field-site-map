@@ -276,10 +276,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;
   padding:20px}
 #photoViewer.show{display:flex}
-#photoViewer img{max-width:96%;max-height:82vh;border-radius:8px;
-  box-shadow:0 12px 50px rgba(0,0,0,.7)}
+#photoViewer img{max-width:96%;max-height:78vh;border-radius:8px;
+  box-shadow:0 12px 50px rgba(0,0,0,.7);touch-action:none;will-change:transform;
+  user-select:none;-webkit-user-drag:none;cursor:grab}
 #photoViewer .cap{color:var(--txt);font-size:14px;font-weight:600;text-align:center}
 #photoViewer .sub{color:var(--dim);font-size:12px}
+#photoViewer .pv-hint{color:var(--dim);font-size:11px;opacity:.7}
+#pvClose{position:absolute;top:10px;right:12px;z-index:2;width:42px;height:42px;border-radius:8px;
+  background:rgba(20,24,29,.85);border:1px solid var(--line);color:var(--txt);font-size:20px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer}
 
 /* coordinate-system picker (DXF import) */
 #crsModal{position:fixed;inset:0;z-index:1500;background:rgba(5,7,9,.8);display:none;
@@ -389,7 +394,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   <button class="btn" id="btnExport">Data — CSV + KML + photos (zip)</button>
 </div>
 <div id="dropOverlay"><div>Drop KML / DXF / photos</div></div>
-<div id="photoViewer"><img alt=""><div class="cap"></div><div class="sub"></div></div>
+<div id="photoViewer"><button id="pvClose" aria-label="Close photo">&#10005;</button><img alt=""><div class="cap"></div><div class="sub"></div><div class="pv-hint">Pinch or scroll to zoom · drag to pan · double-tap to reset</div></div>
 <div id="crsModal">
   <div class="crs-card">
     <h3>Coordinate system of this DXF</h3>
@@ -2123,16 +2128,96 @@ function renderNotes(){
   });
 }
 
-/* ---------- photo viewer ---------- */
+/* ---------- photo viewer (with pinch / wheel / double-tap zoom + pan) ---------- */
+const pvImg = $("#photoViewer img");
+let pvScale = 1, pvTx = 0, pvTy = 0;
+const pvPts = new Map();
+let pvStartDist = 0, pvStartScale = 1, pvFocal = null, pvStartTx = 0, pvStartTy = 0;
+let pvPan = null, pvMoved = false, pvLastTap = 0, pvDownPt = null;
+const PV_MIN = 1, PV_MAX = 8;
+function pvApply(){ pvImg.style.transform = `translate(${pvTx}px,${pvTy}px) scale(${pvScale})`; }
+function pvReset(){ pvScale = 1; pvTx = 0; pvTy = 0; pvApply(); }
+function pvClamp(){
+  const ox = pvImg.clientWidth * (pvScale - 1) / 2 + 30;
+  const oy = pvImg.clientHeight * (pvScale - 1) / 2 + 30;
+  pvTx = Math.max(-ox, Math.min(ox, pvTx));
+  pvTy = Math.max(-oy, Math.min(oy, pvTy));
+}
+function pvCenterOffset(cx, cy){            // screen point → offset from image centre
+  const r = pvImg.getBoundingClientRect();
+  return { x: cx - (r.left + r.width / 2), y: cy - (r.top + r.height / 2) };
+}
+function pvZoomTo(newScale, f){             // zoom keeping focal point f (centre-relative) fixed
+  newScale = Math.max(PV_MIN, Math.min(PV_MAX, newScale));
+  const k = newScale / pvScale;
+  pvTx = f.x - k * (f.x - pvTx);
+  pvTy = f.y - k * (f.y - pvTy);
+  pvScale = newScale;
+  if (pvScale <= 1.001){ pvScale = 1; pvTx = 0; pvTy = 0; }
+  pvClamp(); pvApply();
+}
 function openViewer(src, cap, sub){
   const v = $("#photoViewer");
-  v.querySelector("img").src = src;
+  pvImg.src = src;
   v.querySelector(".cap").textContent = cap || "";
   v.querySelector(".sub").textContent = sub || "";
+  pvReset();
   v.classList.add("show");
 }
-$("#photoViewer").addEventListener("click", () =>
-  $("#photoViewer").classList.remove("show"));
+function closeViewer(){ $("#photoViewer").classList.remove("show"); }
+$("#pvClose").addEventListener("click", closeViewer);
+// tap on the dark area (not the image) closes; the image keeps its gestures
+$("#photoViewer").addEventListener("click", e => { if (e.target !== pvImg && e.target !== $("#pvClose")) closeViewer(); });
+pvImg.addEventListener("wheel", e => {
+  e.preventDefault();
+  pvZoomTo(pvScale * (e.deltaY < 0 ? 1.18 : 1 / 1.18), pvCenterOffset(e.clientX, e.clientY));
+}, { passive: false });
+pvImg.addEventListener("pointerdown", e => {
+  pvImg.setPointerCapture(e.pointerId);
+  pvPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  pvMoved = false; pvDownPt = { x: e.clientX, y: e.clientY };
+  if (pvPts.size === 1) pvPan = { x: e.clientX, y: e.clientY, tx: pvTx, ty: pvTy };
+  else if (pvPts.size === 2){
+    const p = [...pvPts.values()];
+    pvStartDist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    pvStartScale = pvScale; pvStartTx = pvTx; pvStartTy = pvTy;
+    pvFocal = pvCenterOffset((p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2);
+  }
+});
+pvImg.addEventListener("pointermove", e => {
+  if (!pvPts.has(e.pointerId)) return;
+  pvPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pvPts.size === 2 && pvStartDist){
+    const p = [...pvPts.values()];
+    const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    pvScale = Math.max(PV_MIN, Math.min(PV_MAX, pvStartScale * d / pvStartDist));
+    const k = pvScale / pvStartScale;
+    pvTx = pvFocal.x - k * (pvFocal.x - pvStartTx);
+    pvTy = pvFocal.y - k * (pvFocal.y - pvStartTy);
+    pvMoved = true; pvClamp(); pvApply();
+  } else if (pvPts.size === 1 && pvPan && pvScale > 1){
+    pvTx = pvPan.tx + (e.clientX - pvPan.x);
+    pvTy = pvPan.ty + (e.clientY - pvPan.y);
+    if (Math.abs(e.clientX - pvPan.x) > 4 || Math.abs(e.clientY - pvPan.y) > 4) pvMoved = true;
+    pvClamp(); pvApply();
+  }
+});
+function pvUp(e){
+  pvPts.delete(e.pointerId);
+  if (pvPts.size < 2) pvStartDist = 0;
+  if (pvPts.size === 1){ const p = [...pvPts.values()][0]; pvPan = { x: p.x, y: p.y, tx: pvTx, ty: pvTy }; }
+  if (pvPts.size === 0 && !pvMoved){          // a clean tap → double-tap toggles zoom
+    const now = Date.now();
+    if (now - pvLastTap < 300){
+      if (pvScale > 1) pvReset();
+      else pvZoomTo(2.5, pvCenterOffset(pvDownPt.x, pvDownPt.y));
+      pvLastTap = 0;
+    } else pvLastTap = now;
+  }
+}
+pvImg.addEventListener("pointerup", pvUp);
+pvImg.addEventListener("pointercancel", pvUp);
+pvImg.addEventListener("dblclick", e => e.preventDefault());
 
 /* ---------- longsection profile (zoom / pan / layer toggles) ---------- */
 let lsState = null, lsRaf = 0, lsFontScale = 1, lsMapHi = null;
