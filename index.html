@@ -3177,29 +3177,36 @@ async function captureMapImage(bounds, items, sections, CW, CH){
   }
   const groups = {};
   A.forEach(a => { (groups[cl[a.i]] = groups[cl[a.i]] || []).push(a); });
-  const lab = new Array(A.length);                     // {x,y,lead}
+  const lab = new Array(A.length);                     // {x,y,lead,ix,iy} — ix/iy = ideal (short-leader) target
   Object.values(groups).forEach(g => {
-    if (g.length === 1){ lab[g[0].i] = { x: g[0].x, y: g[0].y, lead: false }; return; }
+    if (g.length === 1){ const a = g[0]; lab[a.i] = { x: a.x, y: a.y, lead: false, ix: a.x, iy: a.y }; return; }
     const cx = g.reduce((s, a) => s + a.x, 0) / g.length, cy = g.reduce((s, a) => s + a.y, 0) / g.length;
+    // push each badge OUTWARD along its own dot's direction, to at least a ring radius big
+    // enough to fit the whole cluster — so badges fan out but each stays on its dot's side
+    // (short, non-crossing leaders) instead of being sent to the opposite side
     let spread = 0; g.forEach(a => spread = Math.max(spread, Math.hypot(a.x - cx, a.y - cy)));
-    const spacing = exportPinSize * 2.25;
-    const ring = Math.max(spread + exportPinSize * 2.4, g.length * spacing / (2 * Math.PI));
-    g.sort((p, q) => Math.atan2(p.y - cy, p.x - cx) - Math.atan2(q.y - cy, q.x - cx));  // angular order → leaders don't cross
+    const spacing = exportPinSize * 2.2, off = exportPinSize * 2;
+    const ringR = Math.max(spread + off, g.length * spacing / (2 * Math.PI));
     g.forEach((a, k) => {
-      const ang = (k / g.length) * 2 * Math.PI - Math.PI / 2;
-      lab[a.i] = { x: cx + Math.cos(ang) * ring, y: cy + Math.sin(ang) * ring, lead: true };
+      let dx = a.x - cx, dy = a.y - cy, d = Math.hypot(dx, dy);
+      if (d < 1){ const ang = (k / g.length) * 2 * Math.PI; dx = Math.cos(ang); dy = Math.sin(ang); d = 1; }
+      const ux = dx / d, uy = dy / d, rr = Math.max(d + off, ringR);
+      const ix = cx + ux * rr, iy = cy + uy * rr;
+      lab[a.i] = { x: ix, y: iy, lead: true, ix, iy };
     });
   });
-  const L2 = lab.map((l, i) => ({ x: l.x, y: l.y, lead: l.lead, i, ax: A[i].x, ay: A[i].y }));
-  const sep = exportPinSize * 2.15;                    // relax residual badge overlaps, keep in frame
-  for (let k = 0; k < 40; k++){
+  const L2 = lab.map((l, i) => ({ x: l.x, y: l.y, lead: l.lead, i, ax: A[i].x, ay: A[i].y, ix: l.ix, iy: l.iy }));
+  const sep = exportPinSize * 2.15;                    // spread overlaps apart but spring back to the short-leader spot
+  for (let k = 0; k < 70; k++){
     for (let a = 0; a < L2.length; a++) for (let b = a + 1; b < L2.length; b++){
       let dx = L2[b].x - L2[a].x, dy = L2[b].y - L2[a].y, d = Math.hypot(dx, dy);
       if (d < 0.01){ dx = 1; dy = 0.5; d = 1.12; }
       if (d < sep){ const push = (sep - d) / 2, ux = dx / d, uy = dy / d;
         L2[a].x -= ux * push; L2[a].y -= uy * push; L2[b].x += ux * push; L2[b].y += uy * push; }
     }
-    L2.forEach(l => { l.x = Math.max(exportPinSize + 2, Math.min(CW - exportPinSize - 2, l.x));
+    L2.forEach(l => {                                   // pull back toward the ideal so leaders stay short
+      if (l.lead){ l.x += (l.ix - l.x) * 0.10; l.y += (l.iy - l.y) * 0.10; }
+      l.x = Math.max(exportPinSize + 2, Math.min(CW - exportPinSize - 2, l.x));
       l.y = Math.max(exportPinSize + 2, Math.min(CH - exportPinSize - 2, l.y)); });
   }
   L2.forEach(l => {                                    // leader lines (under everything)
