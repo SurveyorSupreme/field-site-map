@@ -3087,13 +3087,15 @@ function loadTile(url){
     img.src = url;
   });
 }
-async function captureMapImage(bounds, items, sections, CW, CH){
+async function captureMapImage(bounds, items, sections, CW, CH, opts){
+  opts = opts || {};
   const w = bounds.getWest(), e = bounds.getEast(), n = bounds.getNorth(), s = bounds.getSouth();
-  let z = 19;
-  for (; z > 2; z--){
-    if (Math.abs(wX(e, z) - wX(w, z)) <= CW && Math.abs(wY(s, z) - wY(n, z)) <= CH) break;
-  }
-  const cLng = (w + e) / 2, cLat = (s + n) / 2, N = Math.pow(2, z);
+  let z;
+  if (opts.zoom != null) z = Math.min(19, Math.max(2, Math.round(opts.zoom)));  // WYSIWYG: use the screen zoom
+  else { z = 19; for (; z > 2; z--){ if (Math.abs(wX(e, z) - wX(w, z)) <= CW && Math.abs(wY(s, z) - wY(n, z)) <= CH) break; } }
+  const cLng = opts.center ? opts.center.lng : (w + e) / 2;
+  const cLat = opts.center ? opts.center.lat : (s + n) / 2;
+  const N = Math.pow(2, z);
   const tlx = wX(cLng, z) - CW / 2, tly = wY(cLat, z) - CH / 2;
   const canvas = document.createElement("canvas");
   canvas.width = CW; canvas.height = CH;
@@ -3275,10 +3277,22 @@ async function exportReport(){
       sSecs.map(s => `<tr><td>${esc(s.name)}</td><td>${s.type === "area" ? "Area" : "Line"}</td><td>${secVal(s)}</td></tr>`).join("") +
       `</tbody></table>` : "";
   toast("Capturing map…");
-  let pBounds = (exportScope === "view") ? map.getBounds() : reportBounds(items, sSecs);
-  if (!pBounds || !pBounds.isValid()) pBounds = map.getBounds();
-  let planImg = null;
-  try { planImg = await captureMapImage(pBounds, items, sSecs, 1800, 1020); } catch (e) { planImg = null; }
+  let planImg = null, capArgs;
+  if (exportScope === "view"){
+    // WYSIWYG: export exactly what's framed on screen, at the screen's zoom, so pins
+    // stay spread out the way you see them (no cram from auto-fitting a fixed canvas)
+    const b = map.getBounds();
+    let z = Math.min(19, map.getZoom() + 1);                 // +1 for crisp print
+    let CW = Math.abs(wX(b.getEast(), z) - wX(b.getWest(), z));
+    if (CW > 2400){ z = Math.min(19, map.getZoom()); CW = Math.abs(wX(b.getEast(), z) - wX(b.getWest(), z)); }
+    const CH = Math.abs(wY(b.getSouth(), z) - wY(b.getNorth(), z));
+    capArgs = [b, items, sSecs, Math.round(CW), Math.round(CH), { zoom: z, center: map.getCenter() }];
+  } else {
+    let pBounds = reportBounds(items, sSecs);
+    if (!pBounds || !pBounds.isValid()) pBounds = map.getBounds();
+    capArgs = [pBounds, items, sSecs, 1800, 1020];
+  }
+  try { planImg = await captureMapImage(...capArgs); } catch (e) { planImg = null; }
   const planInner = planImg
     ? `<img class="plan" src="${planImg}" alt="" title="Tap to zoom" onclick="openLB(this.src)">`
     : reportPlanSVG(items, sSecs);
