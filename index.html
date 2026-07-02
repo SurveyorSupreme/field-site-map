@@ -86,10 +86,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .pop b{display:block;font-size:14px;margin-bottom:2px}
 .pop span{display:block;color:var(--dim);font-size:12px;margin-top:2px}
 .pop .pop-rl{color:var(--accent);font-weight:600}
-.pop-thumbs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;width:216px;max-width:62vw}
-.pop-photo{width:66px;height:66px;object-fit:cover;border-radius:6px;
-  cursor:pointer;border:1px solid var(--line);background:var(--bg3);flex:0 0 auto}
-.pop-del{margin-top:9px;background:#43181c;color:#fda4af;border:1px solid #7f1d1d;
+.pop-thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;width:216px;max-width:62vw}
+.pop-thumb{position:relative;width:66px;height:66px;flex:0 0 auto}
+.pop-photo{width:100%;height:100%;object-fit:cover;border-radius:6px;
+  cursor:pointer;border:1px solid var(--line);background:var(--bg3)}
+.pop-thumb-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;
+  background:#7f1d1d;color:#fff;border:1px solid var(--bg2);font-size:13px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.pop-acts{display:flex;gap:8px;margin-top:9px}
+.pop-act{flex:1;background:var(--bg3);color:var(--txt);border:1px solid var(--line);
+  border-radius:6px;padding:7px 8px;font-size:12px;font-weight:600;cursor:pointer}
+.pop-del{margin-top:8px;width:100%;background:#43181c;color:#fda4af;border:1px solid #7f1d1d;
   border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
 .pop-ls{margin-top:9px;background:var(--bg3);color:var(--accent);border:1px solid var(--accent);
   border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
@@ -1916,8 +1923,8 @@ async function handlePhoto(file){
         p.photos = p.photos || [];
         p.photos.push(pid);
         const m = pinMarkers.get(p.id);
-        if (m){ m.setIcon(pinIcon(false, true)); m.setPopupContent(popHtml(p)); }
-        persistPins(); renderNotes();
+        if (m) m.setIcon(pinIcon(false, true));
+        persistPins(); renderNotes(); setPinPopup(p);
         toast(`Photo added — ${p.photos.length} on this pin`);
       } catch (e) { toast("Photo could not be stored (storage full?)"); }
     }
@@ -2068,13 +2075,48 @@ $("#btnPinHere").addEventListener("click", () => {
 function popHtml(p){
   const imgs = (p.photos || []).length
     ? `<div class="pop-thumbs">` +
-      (p.photos || []).map(pid => `<img class="pop-photo" data-pid="${pid}" alt="site photo">`).join("") +
+      (p.photos || []).map(pid =>
+        `<span class="pop-thumb"><img class="pop-photo" data-pid="${pid}" alt="site photo">` +
+        `<button class="pop-thumb-x" onclick="delPinPhoto(${p.id},${pid})" aria-label="Remove photo">&times;</button></span>`).join("") +
       `</div>`
     : "";
   return `<div class="pop"><b>${esc(p.note)}</b><span>${p.ts}</span>` + imgs +
-    `<button class="pop-add" onclick="addPhotoToPin(${p.id})">+ Add photo</button>` +
+    `<div class="pop-acts">` +
+      `<button class="pop-act" onclick="renamePin(${p.id})">Rename</button>` +
+      `<button class="pop-act" onclick="addPhotoToPin(${p.id})">+ Photo</button>` +
+    `</div>` +
     `<button class="pop-del" onclick="deletePin(${p.id})">Delete pin</button></div>`;
 }
+// set popup content AND re-hydrate its thumbnails (setPopupContent doesn't fire popupopen)
+function setPinPopup(p){
+  const m = pinMarkers.get(p.id);
+  if (!m) return;
+  m.setPopupContent(popHtml(p));
+  if (m.isPopupOpen()){
+    const el = m.getPopup().getElement();
+    if (el) el.querySelectorAll(".pop-photo[data-pid]").forEach(img =>
+      photoGet(+img.dataset.pid).then(src => { if (src) img.src = src; }));
+  }
+}
+window.renamePin = id => {
+  const p = state.pins.find(x => x.id === id);
+  if (!p) return;
+  const name = prompt("Pin note", p.note);
+  if (name === null) return;
+  p.note = name.trim() || p.note;
+  persistPins(); renderNotes(); setPinPopup(p);
+  toast("Pin renamed");
+};
+window.delPinPhoto = (pinId, photoId) => {
+  const p = state.pins.find(x => x.id === pinId);
+  if (!p) return;
+  p.photos = (p.photos || []).filter(id => id !== photoId);
+  photoDel(photoId);
+  const m = pinMarkers.get(pinId);
+  if (m) m.setIcon(pinIcon(false, hasPhoto(p)));
+  persistPins(); renderNotes(); setPinPopup(p);
+  toast("Photo removed");
+};
 function drawPin(p){
   const m = L.marker([p.lat, p.lng], { icon: pinIcon(false, hasPhoto(p)), draggable: true }).addTo(map);
   if (m.dragging && !tapSel.dragPins) m.dragging.disable();   // off by default — no accidental moves
